@@ -350,7 +350,16 @@ All three projects **ask the panel for the current state** rather than waiting f
 - **Simple Protocol:** `\Z<first-1><count>/` returns the state of a range of zones, `\I/` the panel model and firmware, and `\H/` logs out.
 - **Connect (texecom2mqtt):** after every connect it logs in, reads every zone's state and every area's flags (armed, part-armed level, in alarm), and only then subscribes to events. It re-reads area state after events that don't produce an area message: arm failed, auto-arm, end of installer programming.
 
-**Suggestion:** on connect and reconnect, send `ASTATUS` (and the zone query, if supported) to set the true state. That replaces the "assume disarmed" start-up (2.5) properly, which is better than v5's cache. A cache can't know what changed while Homebridge was down. **Not yet verified on the test panel:** the COM-IP accepts only one connection, so testing it means pausing Homebridge for a few seconds.
+**Confirmed on real hardware** (Premier Elite with two areas, COM-IP in Crestron mode, disarmed), using [`tools/crestron-status-probe.py`](../tools/crestron-status-probe.py):
+
+```
+ASTATUS  ->  "NN\r\n
+LSTATUS  ->  "      HOME      17:29.48 Tue 06 \r\n
+```
+
+`ASTATUS` returns one letter per area (`N` = not armed). Both areas were disarmed, so the per-area reading still needs confirming with an area armed (expected `"YN`). No login was needed for either query. `LSTATUS` returns the keypad display exactly, including the panel clock, which gives a free clock-drift check without the UDL.
+
+**Suggestion:** on connect and reconnect, send `ASTATUS` to set the true armed state. That replaces the "assume disarmed" start-up (2.5) properly, which is better than v5's cache: a cache can't know what changed while Homebridge was down. `ASTATUS` doesn't say *which* arm mode (full or part), so `default_arm_state` is still needed for that.
 
 ### 6.3 Patterns worth copying
 
@@ -365,7 +374,7 @@ All three projects **ask the panel for the current state** rather than waiting f
 | Change arm mode | Disarms, then arms in the new mode | Sends the new arm command directly |
 | Start-up | Reads full state, then subscribes | Assumes disarmed (2.5) |
 
-A periodic `ASTATUS` would give this plugin the same application-level heartbeat and keep HomeKit's state honest, if 6.2 is confirmed.
+A periodic `ASTATUS` (confirmed to work, 6.2) would give this plugin the same application-level heartbeat and keep HomeKit's state honest.
 
 ### 6.4 Crestron vs Connect
 
