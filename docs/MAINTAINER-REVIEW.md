@@ -482,9 +482,29 @@ On 6 Oct texecom2mqtt (Connect, via the SmartCom) and the plugin (Crestron, via 
 - **User numbers:** the panel's own event log (5 years of history read from Wintex) only contains users 0 (engineer), 1, 3 and 4. So `"A00129` ("user 29") is a pseudo-user for arms made through the UDL/Crestron interface, not a real user slot. Remote arms and disarms are logged as user 0. These values aren't standard across panels, which supports keeping `app_users` / `remote_users` configurable.
 - **Wintex's saved event log** (`Customers/<name>.tlf`, under the Windows VirtualStore) is easy to read: 9-byte records of `[type][group][parameter][areas LE16][Unix time LE32]`, with types matching the Connect protocol's log event numbers. Event type **137** (parameters 100 and 102, group 9) appears during engineer programming and isn't in texecom2mqtt's list.
 
+### 6.6 Fork survey (October 2026)
+
+Every fork of the related projects was compared with its parent. Only a few have changes worth knowing about:
+
+| Fork | Last update | What it adds | Use here |
+|---|---|---|---|
+| [southseaboy/texecom-connect](https://github.com/southseaboy/texecom-connect) (Apache-2.0) | Sep 2026 | The most active Connect work, with tests. Arm/disarm **as a user** (commands 29/30). Bulk area-flag reads refused on Elite 48 V4.02.01. Full list of the 73 area flag names. Alarm-end and exit-error handling. Inferring a missed arm/disarm log record | Flag names and the short-read fallback adopted (section 7). Our 30 s state re-read covers the alarm-end and exit-error cases |
+| [Sjoerdfc/texecom-connect](https://github.com/Sjoerdfc/texecom-connect) (Apache-2.0) | Aug 2026 | Idle-time state re-read; `GET_ZONE_CHANGES` NAKed by some firmware | Keep-alive design adopted |
+| mpredfearn, lodesmets (texecom-connect) | 2020, 2025 | Part-arm support, Home Assistant fixes | Superseded by the above |
+| chip1967, anthonyangel (texecom-connect) | 2019–2021 | MQTT/service tweaks; `GET_LCD_DISPLAY` as keep-alive | Nothing new |
+| [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect) (MIT) | 2024 release, dependency bumps since | Despite the name it uses **Crestron**, and arms by **keypad emulation**: `KEY<digit>` per code digit, 500 ms apart, **with no line terminator** | See below |
+| texecom2mqtt-hassio forks (srkrunner, dizlem-org, dkboldPers) | 2025–2026 | Packaging only (e.g. `libatomic1` in the image) | None |
+| homebridge-texecom forks (other than this one) | 2019–2026 | Nothing beyond upstream | None |
+
+**Two facts from southseaboy worth knowing whatever transport you use:**
+- **An ACK isn't proof.** On their panel, a disarm by an "arm only" user was ACKed but not carried out, with no log event. The only reliable evidence of the result is the area state that follows.
+- **The panel never reports an alarm ending** (no area event, even after an engineer reset), and an arm that fails in the exit delay sends no area event either. A client has to re-read the area flags, which the keep-alive here does every 30 s.
+
+**Keypad emulation, revisited:** this plugin's `KEY<digit>` test (6.2, section 2.0b option 1) sent each key with CR LF, as TexecomManager does, and the panel ignored it. garethflowers' published plugin sends keys **without** a line terminator. That is untested on the V6.05.03 panel. `tools/crestron-keypad-probe.py --no-crlf` is ready for a supervised test, since entering a valid code may arm the panel.
+
 ### Credits
 
-Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), David Brooke (Connect protocol), Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager).
+Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect).
 
 ---
 
