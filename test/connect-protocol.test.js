@@ -8,6 +8,7 @@ const P = require('../lib/connect/protocol');
 const { ConnectClient } = require('../lib/connect/client');
 
 const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
+const fast = { loginDelayMs: 20, commandTimeoutMs: 300, commandAttempts: 2, reconnectMinMs: 5000 };
 
 function frame(type, sequence, body) {
   const f = Buffer.alloc(5 + body.length);
@@ -141,7 +142,7 @@ async function startFakePanel({ udl = '1234', dropAfterLogin = false } = {}) {
 
 test('client logs in, subscribes, reads panel id and receives events', async () => {
   const server = await startFakePanel();
-  const client = new ConnectClient({ log: silentLog, host: '127.0.0.1', port: server.address().port, udl: '1234' });
+  const client = new ConnectClient({ log: silentLog, host: '127.0.0.1', port: server.address().port, udl: '1234', timing: fast });
   const messages = [];
   client.on('message', (m) => messages.push(m));
   const ready = once(client, 'ready');
@@ -159,14 +160,14 @@ test('client reports a rejected UDL and a panel-initiated drop', async () => {
   const server = await startFakePanel({ dropAfterLogin: true });
   const warnings = [];
   const log = { ...silentLog, warn: (m) => warnings.push(m), error: (m) => warnings.push(m) };
-  const bad = new ConnectClient({ log, host: '127.0.0.1', port: server.address().port, udl: '9999' });
+  const bad = new ConnectClient({ log, host: '127.0.0.1', port: server.address().port, udl: '9999', timing: fast });
   bad.start();
   await new Promise((r) => setTimeout(r, 700));
   bad.stop();
   assert.ok(warnings.some((w) => /login rejected/.test(w)), warnings.join('\n'));
 
   warnings.length = 0;
-  const good = new ConnectClient({ log, host: '127.0.0.1', port: server.address().port, udl: '1234' });
+  const good = new ConnectClient({ log, host: '127.0.0.1', port: server.address().port, udl: '1234', timing: fast });
   good.start();
   await new Promise((r) => setTimeout(r, 800));
   good.stop();
@@ -220,7 +221,7 @@ test('client arms, disarms and reads zone/area state from a fake panel', async (
   });
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
-  const client = new ConnectClient({ log: silentLog, host: '127.0.0.1', port: server.address().port, udl: '1234' });
+  const client = new ConnectClient({ log: silentLog, host: '127.0.0.1', port: server.address().port, udl: '1234', timing: fast });
   const ready = once(client, 'ready');
   client.start();
   await ready;
@@ -233,4 +234,14 @@ test('client arms, disarms and reads zone/area state from a fake panel', async (
   assert.deepEqual([zones[1].state, zones[2].state, zones[3].state], ['active', 'secure', 'tamper']);
   assert.deepEqual(areas, { 1: { state: 'armed', partArm: null } });
   assert.deepEqual(commands.slice(-2), [[P.COMMAND.ARM_AREA, 1, 1], [P.COMMAND.DISARM_AREA, 1]]);
+});
+
+test('stop() during the pre-login delay leaves nothing running', async () => {
+  const server = await startFakePanel();
+  const client = new ConnectClient({ log: silentLog, host: '127.0.0.1', port: server.address().port, udl: '1234' });
+  client.start();
+  await new Promise((r) => setTimeout(r, 100)); // connected, login still pending (2 s default)
+  client.stop();
+  server.close();
+  assert.equal(client.socket, null);
 });
