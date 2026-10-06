@@ -167,19 +167,23 @@ class FakeConnectPanel {
         break;
       }
       case P.COMMAND.GET_AREA_FLAGS: {
-        const flags = Buffer.alloc(args[1]);
+        if (this.bulkFlagsUnsupported && args[1] > 1) {
+          reply(Buffer.from([P.NAK])); // as reported for Elite 48 V4.02.01
+          break;
+        }
+        const all = Buffer.alloc(73);
         const { state, partArm } = this.area;
         if (state === 5) {
-          flags[P.AREA_FLAG.ALARM] = 1;
+          all[P.AREA_FLAG.ALARM] = 1;
         } else if (state === 3) {
-          flags[P.AREA_FLAG.ARMED] = 1;
-          flags[P.AREA_FLAG.FULL_ARMED] = 1;
+          all[P.AREA_FLAG.ARMED] = 1;
+          all[P.AREA_FLAG.FULL_ARMED] = 1;
         } else if (state === 4) {
-          flags[P.AREA_FLAG.ARMED] = 1;
-          flags[P.AREA_FLAG.PART_ARMED] = 1;
-          flags[P.AREA_FLAG.PART_ARM_1 + (partArm - 1)] = 1;
+          all[P.AREA_FLAG.ARMED] = 1;
+          all[P.AREA_FLAG.PART_ARMED] = 1;
+          all[P.AREA_FLAG.PART_ARM_1 + (partArm - 1)] = 1;
         }
-        reply(flags);
+        reply(all.subarray(args[0], args[0] + args[1]));
         break;
       }
       case P.COMMAND.ARM_AREA: {

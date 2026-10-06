@@ -256,3 +256,28 @@ test('an unanswered keep-alive reconnects instead of sitting on a dead session',
     teardown(ctx);
   }
 });
+
+test('panels that refuse bulk area-flag reads fall back to single-flag reads', async () => {
+  const panel = new FakeConnectPanel();
+  panel.bulkFlagsUnsupported = true;
+  panel.area = { state: 4, partArm: 1 }; // part armed when the plugin starts
+  const port = await panel.listen();
+  const api = new EventEmitter();
+  Object.assign(api, {
+    hap, platformAccessory: PlatformAccessory,
+    registerPlatformAccessories() {}, updatePlatformAccessories() {}, unregisterPlatformAccessories() {},
+  });
+  const platform = new TexecomPlatform(silentLog, {
+    protocol: 'connect', ip_address: '127.0.0.1', ip_port: port, udl: '1234', _connectTiming: fast,
+  }, api);
+  api.emit('didFinishLaunching');
+  try {
+    await until(() => platform.areas.size === 1);
+    const current = platform.areas.get(1).service.getCharacteristic(Current);
+    await until(() => current.value === Current.NIGHT_ARM); // not mis-read as disarmed
+    assert.equal(platform.connectPanel.client.singleFlagReads, true);
+  } finally {
+    platform.shutdown();
+    panel.close();
+  }
+});
