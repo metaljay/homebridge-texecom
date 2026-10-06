@@ -13,7 +13,8 @@ This is a review of `homebridge-texecom-full` against current Homebridge plugin 
 
 1. problems your beta already fixes, for reference;
 2. **problems still present in `4.4.0-beta.1`**, with evidence and a small suggested patch against *your* code for each. The most serious, lost keypad disarms causing false alarms in HomeKit, is first;
-3. a restructured reference version ("v5", in this branch) that implements all of the fixes with tests, in case you want to adopt some or all of it.
+3. a restructured reference version ("v5", in this branch) that implements all of the fixes with tests, in case you want to adopt some or all of it;
+4. what other Texecom projects do differently, and what's worth copying (section 6).
 
 **The suggested route is small patches against your beta, not merging v5 wholesale.** v5 uses a different accessory UUID scheme, so adopting it as-is would orphan existing users' accessories (see section 1).
 
@@ -259,7 +260,7 @@ if (!newState && me.dwell_time > 0) { me.dwell_timer = setTimeout(...); } else {
 
 These are in v5 but are **not verified on a panel**, and are worth checking before relying on them.
 
-- **Tamper reporting.** v5 sets HomeKit `StatusTampered` when a zone status digit is anything other than `0` or `1`. `2` is believed to be tamper in the Crestron protocol. Real-panel testing only ever saw `0` and `1`, so this is unconfirmed.
+- **Tamper reporting.** v5 sets HomeKit `StatusTampered` when a zone status digit is anything other than `0` or `1`. TexecomManager confirms `2` is tamper (section 6.1), but tamper hasn't been triggered on the test panel.
 - **Arm state shown immediately after `OK`.** Both your beta and v5 show the target state as soon as the panel acknowledges, rather than waiting for the arm event after the exit delay. This matches the existing behaviour and is unchanged.
 
 ---
@@ -315,3 +316,63 @@ npm run lint
 npm test
 node tools/fake-panel.js          # then point a test Homebridge at 127.0.0.1:10001
 ```
+
+---
+
+## 6. Learning from other Texecom projects
+
+Several other open-source projects talk to Texecom panels. Two use the same Crestron/Simple protocols as this plugin; others use the richer, binary **Texecom Connect** protocol. Reviewed:
+
+- **[texecom2mqtt](https://github.com/dchesterton/texecom2mqtt-hassio)** (Daniel Chesterton): Connect protocol, MQTT and Home Assistant. Its source repository isn't public, so this review used the code bundled in the published Docker image (1.3.1).
+- **[TexecomManager](https://github.com/JumpMaster/TexecomManager)** (JumpMaster): Crestron plus Simple Protocol over serial.
+- **[pialarm](https://github.com/shuckc/pialarm/blob/master/protocol/readme.md)** (Chris Shucksmith): Simple Protocol traces, credited in this plugin's README.
+- Also relevant, not reviewed in depth: [davidMbrooke/texecom-connect](https://github.com/davidMbrooke/texecom-connect) (the original Connect protocol reverse-engineering) and [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect), an existing Homebridge plugin built on the Connect protocol.
+
+### 6.1 Protocol details confirmed by other implementations
+
+TexecomManager independently confirms the message meanings observed on the real panel in section 2.0, and adds a few:
+
+| Message | Meaning | Source |
+|---|---|---|
+| `"Z` + zone + `0`/`1`/`2` | zone **healthy / active / tamper** | TexecomManager (also observed: 0 and 1) |
+| `"U0` + user | user logged in with a PIN | TexecomManager, observed |
+| `"T0` + user | user logged in with a **prox tag** | TexecomManager |
+| `"X0`, `"E0`, `"L0` | exit delay / entry delay / intruder alarm | TexecomManager, observed |
+| `ERROR` | command rejected | TexecomManager |
+
+So **zone status `2` is tamper**, which removes the uncertainty in section 3: v5's `StatusTampered` mapping is right. The beta currently treats `2` as "not active" and ignores it.
+
+### 6.2 Querying state instead of assuming it
+
+All three projects **ask the panel for the current state** rather than waiting for the next event:
+
+- **Crestron:** `ASTATUS` (sent as a line, `ASTATUS\r\n`) returns `"Y…` (armed) or `"N…` (disarmed), and `LSTATUS` returns the keypad screen text. TexecomManager uses these to confirm the result after arming or disarming.
+- **Simple Protocol:** `\Z<first-1><count>/` returns the state of a range of zones, `\I/` the panel model and firmware, and `\H/` logs out.
+- **Connect (texecom2mqtt):** after every connect it logs in, reads every zone's state and every area's flags (armed, part-armed level, in alarm), and only then subscribes to events. It re-reads area state after events that don't produce an area message: arm failed, auto-arm, end of installer programming.
+
+**Suggestion:** on connect and reconnect, send `ASTATUS` (and the zone query, if supported) to set the true state. That replaces the "assume disarmed" start-up (2.5) properly, which is better than v5's cache. A cache can't know what changed while Homebridge was down. **Not yet verified on the test panel:** the COM-IP accepts only one connection, so testing it means pausing Homebridge for a few seconds.
+
+### 6.3 Patterns worth copying
+
+| Pattern | texecom2mqtt | This plugin (beta) |
+|---|---|---|
+| Message framing | Buffers bytes and parses complete, length-prefixed, CRC-checked messages, looping when several arrive together | Parses each TCP chunk as one message (2.1) |
+| One command in flight | Queue; next command only after the reply (or timeout) | Commands can interleave (2.2) |
+| Reply matching | Sequence number per command; replies for unknown sequences are logged and ignored | Any `OK` resolves any waiting command (2.2) |
+| Timeout / retries | 3.5 s × 5 attempts | 2 s × 2 (the test panel needed 3 s, 2.2) |
+| Liveness | TCP keep-alive (10 s), socket idle timeout (60 s) → reconnect, plus an application poll every 30 s | No keep-alive; a silently dropped COM-IP isn't detected (2.6) |
+| Disarm while in alarm | Sends **reset** first, then disarm | Disarm only |
+| Change arm mode | Disarms, then arms in the new mode | Sends the new arm command directly |
+| Start-up | Reads full state, then subscribes | Assumes disarmed (2.5) |
+
+A periodic `ASTATUS` would give this plugin the same application-level heartbeat and keep HomeKit's state honest, if 6.2 is confirmed.
+
+### 6.4 Crestron vs Connect
+
+The Connect protocol reports things Crestron can't: **which** part-arm (1/2/3) was used, explicit "in exit" and "in entry" states (HomeKit's "Arming…"), zone names and area membership straight from the panel, fault, masked and bypassed flags, power supply readings, and the full event log. It needs a Premier Elite on v4+ firmware with a ComIP, ComWifi or SmartCom, and like Crestron it takes over that connection (only one app per module).
+
+Crestron remains the simpler option and works over serial and on older panels. A reasonable direction is to keep this plugin on Crestron, adopt the fixes in section 2 and the state queries in 6.2, and point users who want richer data at a Connect-based plugin.
+
+### Credits
+
+Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), David Brooke (Connect protocol), Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager).
