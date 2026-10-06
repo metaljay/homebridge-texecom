@@ -1,0 +1,82 @@
+'use strict';
+
+/**
+ * Replays a session recorded from a real panel through the platform, using
+ * real HAP-NodeJS characteristics, and checks what HomeKit would have shown.
+ * The fixture keeps the original TCP chunking, which is what exposed lost
+ * keypad disarms and false "triggered" states in 4.4.0-beta.1.
+ */
+
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { EventEmitter } = require('node:events');
+const hap = require('hap-nodejs');
+const { PlatformAccessory } = require('homebridge/lib/platformAccessory');
+const { TexecomPlatform } = require('../lib/platform');
+const { LineSplitter } = require('../lib/protocol');
+const session = require('./fixtures/real-session-2026-10-06.json');
+
+const Current = hap.Characteristic.SecuritySystemCurrentState;
+const STATE_NAMES = { [Current.STAY_ARM]: 'stay', [Current.AWAY_ARM]: 'away', [Current.NIGHT_ARM]: 'night',
+  [Current.DISARMED]: 'disarmed', [Current.ALARM_TRIGGERED]: 'triggered' };
+
+function createApi() {
+  const api = new EventEmitter();
+  api.hap = hap;
+  api.platformAccessory = PlatformAccessory;
+  api.registerPlatformAccessories = () => {};
+  api.updatePlatformAccessories = () => {};
+  api.unregisterPlatformAccessories = () => {};
+  return api;
+}
+
+const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
+
+const config = {
+  name: 'Texecom',
+  // No connection configured: lines are fed in directly below.
+  zones: Object.entries(session.zones).map(([n, name]) => ({ name, zone_number: n, zone_type: 'motion' })),
+  areas: [{ name: 'Home', area_number: '1', zones: [1, 2, 3, 4, 5] }],
+};
+
+function replay(overrides = {}) {
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, { ...config, ...overrides }, api);
+  api.emit('didFinishLaunching');
+
+  const area = platform.areas.get(1);
+  const timeline = [];
+  area.service.getCharacteristic(Current).on('change', ({ newValue }) => {
+    timeline.push(STATE_NAMES[newValue]);
+  });
+
+  const splitter = new LineSplitter((line) => platform.handleLine(line));
+  for (const [, messages] of session.chunks) {
+    splitter.push(Buffer.from(messages.map((m) => `${m}\r\n`).join(''), 'latin1'));
+  }
+  return { platform, area, timeline };
+}
+
+test('real session: every keypad arm/disarm and the real alarm reach HomeKit', () => {
+  const { timeline } = replay();
+  assert.deepEqual(timeline, [
+    'away', 'disarmed', // full arm, disarm
+    'away', 'disarmed', // full arm, walk in, disarm during entry delay
+    'away', 'triggered', 'disarmed', // full arm, alarm sounds, disarm
+  ]);
+});
+
+test('real session: ends disarmed with every sensor clear', () => {
+  const { platform, area } = replay();
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+  for (const zone of platform.zones.values()) {
+    assert.equal(zone.service.getCharacteristic(hap.Characteristic.MotionDetected).value, false, zone.zone.name);
+  }
+});
+
+test('real session: walking in during the entry delay is not an alarm, even with trigger_from_zones', () => {
+  // 15:32:22 the user walked in (entry delay) and disarmed at the keypad. Only
+  // the 15:33:02 "L" is a real alarm.
+  const { timeline } = replay({ trigger_from_zones: true });
+  assert.deepEqual(timeline, ['away', 'disarmed', 'away', 'disarmed', 'away', 'triggered', 'disarmed']);
+});

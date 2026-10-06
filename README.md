@@ -124,12 +124,15 @@ This plugin is a platform plugin so you must configure each zone from your Texec
 | `name` | N/A | The name of the area as it will appear in HomeKit, e.g. 'Texecom Alarm'. |
 | `area_number` | N/A | The area number from Texecom, usually 1. Only areas 1–8 can be armed/disarmed from HomeKit. |
 | `area_type` | `"securitysystem"` | The type of area; only securitysystem is supported. |
-| `zones` | N/A | Zone numbers in this area. When one of them activates while the area is armed away, HomeKit shows the area as triggered. |
+| `zones` | N/A | Zone numbers in this area. Only used with `trigger_from_zones`. |
 
 ### Other options
 
 | Key | Default | Description |
 | --- | --- | --- |
+| `default_arm_state` | `"away"` | How an arm by a keypad user is shown in HomeKit (`away`, `night` or `stay`). The panel doesn't say whether an arm was full or part. |
+| `remote_users` | [] | Panel user numbers for remotes/keyfobs; their arms are always shown as Away |
+| `trigger_from_zones` | false | Mark an armed area as triggered when one of its zones goes active (outside the entry delay). Leave off unless your panel doesn't report alarms itself. |
 | `debug` | false | Log every message received from the panel without enabling Homebridge-wide debug mode |
 
 ### Tamper reporting

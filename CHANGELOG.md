@@ -20,6 +20,11 @@ This change log documents all release versions of homebridge-texecom
 - **NEW** - Failed arm/disarm attempts return a proper HomeKit error, so the Home app shows "No Response" instead of a false success
 - **NEW** - Config schema: UDL is a string (keeps leading zeros), zone/area numbers are integers with limits, layout split into sections, removed "Official" wording
 - **NEW** - Config validation with clear log messages for missing or duplicate zone/area numbers
+- **FIX** - Keypad arms reported as Night: arm state now uses `remote_users` and `default_arm_state` (same keys and logic as upstream 4.3.1+)
+- **FIX** - Zone-inferred alarms are off by default (`trigger_from_zones`), because they misfire on every normal entry; the panel's own alarm message is used instead. When enabled, they ignore the entry delay.
+- **FIX** - Command timeout raised to 5 s: a real COM-IP took 3 s to acknowledge a login
+- **NEW** - Recognises keypad (`U`), exit delay (`X`) and entry delay (`E`) messages from the panel
+- **NEW** - Regression test replaying a real panel session (`test/fixtures/real-session-2026-10-06.json`)
 - **TWEAK** - Supports Homebridge `^1.8.0 || ^2.0.0` and Node `^20.18.0 || ^22.10.0 || ^24.0.0`
 - **TWEAK** - Code split into `lib/` modules; uses the Homebridge logger directly
 - **TWEAK** - Removed the unmaintained `string` and `zpad` packages and the unused `debug`, `crypto-js` and `@serialport/parser-readline` packages; `serialport` upgraded to v13

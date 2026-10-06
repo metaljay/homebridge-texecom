@@ -15,10 +15,17 @@ test('parses area messages', () => {
   assert.deepEqual(parseLine('"L001'), { type: 'area', event: 'L', area: 1, user: '' });
 });
 
+test('parses keypad, exit and entry delay messages seen on a real panel', () => {
+  assert.deepEqual(parseLine('"U0030'), { type: 'user', user: 3 });
+  assert.deepEqual(parseLine('"X0010'), { type: 'area', event: 'X', area: 1, user: '0' });
+  assert.deepEqual(parseLine('"E0010'), { type: 'area', event: 'E', area: 1, user: '0' });
+  assert.deepEqual(parseLine('"A001123'), { type: 'area', event: 'A', area: 1, user: '123' });
+});
+
 test('parses acknowledgements and unknown lines', () => {
   assert.deepEqual(parseLine('OK\r'), { type: 'ok' });
   assert.deepEqual(parseLine('ERROR'), { type: 'error' });
-  assert.equal(parseLine('"X123').type, 'unknown');
+  assert.equal(parseLine('"Q123').type, 'unknown');
   assert.equal(parseLine('"Zabc').type, 'unknown');
 });
 

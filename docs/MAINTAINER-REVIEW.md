@@ -42,13 +42,47 @@ Items marked **Confirmed on real hardware** were observed on Jordan's live insta
 **Your beta does several things v5 does not. Anything merged from v5 should keep them:**
 
 - **UUIDs compatible with 4.2.8 (`Texecom:<name>`) and 4.3.0.** v5 uses a new scheme, `homebridge-texecom-full:zone:7`, which would make every existing user re-pair and rebuild their automations. That part of v5 should **not** be adopted.
-- **Configurable `remote_users` / `app_users` / `default_arm_state`** (#25). v5 still hard-codes users 17 and 25.
-- **User numbers above 99.** v5 still truncates them to two digits, as 4.3.0 did.
+- **Configurable `remote_users` / `default_arm_state`** (#25). v5 has now adopted this with the same config keys and the same order of checks (remote user, then the HomeKit request, then the default). Before that, real-panel testing showed v5 reporting keypad arms as Night.
+- **User numbers above 99.** v5 now parses them the same way as your regex.
 - **Combined areas and panel clock sync.**
 
 ---
 
 ## 2. Still present in `4.4.0-beta.1`
+
+### 2.0 Real-world impact: lost keypad disarms cause false alarms in HomeKit (*Confirmed on real hardware*)
+
+This is the most serious finding, and it combines 2.1 with the zone-trigger behaviour described below. Jordan ran three keypad tests on `4.4.0-beta.1`: arm then disarm; arm, walk in, disarm during the entry delay; arm, walk in and let the alarm sound, then disarm. Afterwards he reported that **"the HomeKit notifications throughout that exercise were well off"**. The debug log shows why:
+
+- The panel sends "user entered code" and "disarmed" a fraction of a second apart, so they often arrive in **one** TCP chunk: `"U0030\r\n"D0013\r\n`. Because of 2.1, the beta processed the `U` and **dropped the disarm, twice out of three times**.
+- `areas_armed` therefore still contained area 1. For the rest of the session, every hallway or kitchen movement produced `Area 001 manual triggered`: **six false "alarm triggered" states in two minutes** while the panel was disarmed.
+- HomeKit was left showing **Triggered** until Homebridge was restarted.
+
+The whole session, with the original TCP chunking, is in [`test/fixtures/real-session-2026-10-06.json`](../test/fixtures/real-session-2026-10-06.json). `node tools/replay-panel.js test/fixtures/real-session-2026-10-06.json` replays it to any build. Replayed against both versions:
+
+| | 4.4.0-beta.1 | v5 |
+|---|---|---|
+| Keypad disarms seen | 1 of 3 | 3 of 3 |
+| False "triggered" states | 6 | 0 |
+| Real alarm (`"L0010`) shown | yes | yes |
+| Final HomeKit state | **Triggered** (panel was disarmed) | Disarmed |
+
+`test/real-session.test.js` runs the same replay through v5 as an automated test.
+
+**Zone-inferred alarms misfire on every normal homecoming, even with 2.1 fixed.** When an away-armed area has a zone go active, the beta marks the area as triggered (`manual triggered`). But walking in through the entry route *is* a zone going active while armed. The panel sends `"E0010` (entry delay), you disarm, and nothing is wrong. At 15:32:22 the beta would have raised a false alarm here if that zone message hadn't been lost in the same chunk as the `E`. The panel reports real alarms itself (`"L0010` arrived at 15:33:02, when the siren sounded), so inference isn't needed. **Suggestion:** rely on `L`, and make zone inference opt-in for panels that don't send `L`. If it is kept, it should ignore activity between `E` and the following `D`/`L`. v5 does both (`trigger_from_zones`, default off).
+
+**Messages your panel sends that the plugin doesn't yet recognise** (all confirmed by Jordan's test sequence; user 3 is his code):
+
+| Message | Meaning |
+|---|---|
+| `"U0030` | User 003 entered a code at a keypad |
+| `"X0010` | Area 001 exit delay started |
+| `"E0010` | Area 001 entry delay started |
+| `"A0013` / `"D0013` | Area 001 armed / disarmed by user 3 (user number is variable width, as your regex already allows) |
+| `"L0010` | Area 001 alarm |
+
+`X` could drive HomeKit's "Arming…" display: set the target state while the current state stays disarmed. `E` could give an "entry delay" notification.
+
 
 They're listed most severe first. Line numbers refer to `index.js` on `4.4.0-beta.0` at `674be7c`.
 

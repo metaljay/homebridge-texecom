@@ -39,11 +39,36 @@
         "type": "integer",
         "default": 19200,
         "oneOf": [
-          { "title": "9600", "enum": [9600] },
-          { "title": "19200 (typical)", "enum": [19200] },
-          { "title": "38400", "enum": [38400] },
-          { "title": "57600", "enum": [57600] },
-          { "title": "115200", "enum": [115200] }
+          {
+            "title": "9600",
+            "enum": [
+              9600
+            ]
+          },
+          {
+            "title": "19200 (typical)",
+            "enum": [
+              19200
+            ]
+          },
+          {
+            "title": "38400",
+            "enum": [
+              38400
+            ]
+          },
+          {
+            "title": "57600",
+            "enum": [
+              57600
+            ]
+          },
+          {
+            "title": "115200",
+            "enum": [
+              115200
+            ]
+          }
         ],
         "condition": {
           "functionBody": "return !!model.serial_device;"
@@ -80,10 +105,30 @@
               "default": "motion",
               "required": true,
               "oneOf": [
-                { "title": "Motion", "enum": ["motion"] },
-                { "title": "Contact (door/window)", "enum": ["contact"] },
-                { "title": "Smoke", "enum": ["smoke"] },
-                { "title": "Carbon Monoxide", "enum": ["carbonmonoxide"] }
+                {
+                  "title": "Motion",
+                  "enum": [
+                    "motion"
+                  ]
+                },
+                {
+                  "title": "Contact (door/window)",
+                  "enum": [
+                    "contact"
+                  ]
+                },
+                {
+                  "title": "Smoke",
+                  "enum": [
+                    "smoke"
+                  ]
+                },
+                {
+                  "title": "Carbon Monoxide",
+                  "enum": [
+                    "carbonmonoxide"
+                  ]
+                }
               ]
             },
             "dwell": {
@@ -119,12 +164,14 @@
               "title": "Area Type",
               "type": "string",
               "default": "securitysystem",
-              "enum": ["securitysystem"]
+              "enum": [
+                "securitysystem"
+              ]
             },
             "zones": {
               "title": "Zones in this Area",
               "type": "array",
-              "description": "Zone numbers that should show this area as triggered when activated while away-armed.",
+              "description": "Zone numbers in this area. Only used with \"Show alarm from zone activity\".",
               "items": {
                 "type": "integer",
                 "minimum": 1,
@@ -133,6 +180,47 @@
             }
           }
         }
+      },
+      "remote_users": {
+        "title": "Remote / Keyfob Users",
+        "type": "array",
+        "description": "Panel user numbers that arm using a remote or keyfob. An arm by one of these users is always shown as Away in HomeKit.",
+        "items": {
+          "type": "integer",
+          "title": "User Number"
+        }
+      },
+      "default_arm_state": {
+        "title": "Default Arm State",
+        "type": "string",
+        "default": "away",
+        "description": "What to show in HomeKit when an area is armed by any other user, at a keypad for example. The panel does not report whether an arm was full or part, so this is a best guess.",
+        "oneOf": [
+          {
+            "title": "Away",
+            "enum": [
+              "away"
+            ]
+          },
+          {
+            "title": "Night",
+            "enum": [
+              "night"
+            ]
+          },
+          {
+            "title": "Stay / Home",
+            "enum": [
+              "stay"
+            ]
+          }
+        ]
+      },
+      "trigger_from_zones": {
+        "title": "Show alarm from zone activity",
+        "type": "boolean",
+        "default": false,
+        "description": "Mark an away-armed area as triggered as soon as one of its zones goes active (outside the entry delay). Off by default: the panel reports real alarms itself. Only turn this on if your panel does not."
       },
       "debug": {
         "title": "Debug logging",
@@ -147,7 +235,13 @@
     {
       "type": "fieldset",
       "title": "Connection",
-      "items": ["ip_address", "ip_port", "serial_device", "baud_rate", "udl"]
+      "items": [
+        "ip_address",
+        "ip_port",
+        "serial_device",
+        "baud_rate",
+        "udl"
+      ]
     },
     {
       "key": "zones",
@@ -161,7 +255,12 @@
         {
           "type": "flex",
           "flex-flow": "row wrap",
-          "items": ["zones[].name", "zones[].zone_number", "zones[].zone_type", "zones[].dwell"]
+          "items": [
+            "zones[].name",
+            "zones[].zone_number",
+            "zones[].zone_type",
+            "zones[].dwell"
+          ]
         }
       ]
     },
@@ -180,7 +279,9 @@
           "key": "areas[].zones",
           "type": "array",
           "buttonText": "Add zone",
-          "items": ["areas[].zones[]"]
+          "items": [
+            "areas[].zones[]"
+          ]
         }
       ]
     },
@@ -189,7 +290,19 @@
       "title": "Advanced",
       "expandable": true,
       "expanded": false,
-      "items": ["debug"]
+      "items": [
+        "default_arm_state",
+        {
+          "key": "remote_users",
+          "type": "array",
+          "buttonText": "Add user",
+          "items": [
+            "remote_users[]"
+          ]
+        },
+        "trigger_from_zones",
+        "debug"
+      ]
     }
   ]
 }
