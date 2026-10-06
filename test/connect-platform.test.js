@@ -179,3 +179,31 @@ test('logs which zone caused an alarm (log event parameter)', async () => {
     panel.close();
   }
 });
+
+test('idle keep-alive re-reads state and catches a missed zone change', async () => {
+  const ctx = await setup({ _connectTiming: { ...fast, keepaliveMs: 150 } });
+  try {
+    const kitchen = ctx.platform.zones.get(3).service.getCharacteristic(C.MotionDetected);
+    ctx.panel.zoneState[3] = 1; // changes on the panel without an event message
+    await until(() => kitchen.value === true, 3000);
+  } finally {
+    teardown(ctx);
+  }
+});
+
+test('periodic re-reads do not restart a zone dwell timer', async () => {
+  const ctx = await setup({ _connectTiming: { ...fast, keepaliveMs: 100 } });
+  try {
+    let calls = 0;
+    const zone = ctx.platform.zones.get(5);
+    const original = zone.setState.bind(zone);
+    zone.setState = (s) => {
+      calls++;
+      original(s);
+    };
+    await wait(450); // several idle re-reads with no change
+    assert.equal(calls, 0);
+  } finally {
+    teardown(ctx);
+  }
+});

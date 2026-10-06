@@ -19,6 +19,11 @@ disarm when in alarm" behaviour) are adapted from texecom2mqtt 1.3.1:
   https://github.com/dchesterton/texecom2mqtt-hassio
   MIT License - see LICENSE-texecom2mqtt in this folder
 
+The arm/disarm/reset and zone-state / area-flag command layouts were also
+cross-checked against an independently maintained, Apache-2.0 licensed
+fork of texecom-connect (https://github.com/Sjoerdfc/texecom-connect), whose
+idle-time state re-read is the model for the keep-alive here.
+
 Other behaviour (timings, session drops during alarm reporting, unknown
 area state 6, event type 137) was observed on a real Premier Elite panel
 during testing for this project.
