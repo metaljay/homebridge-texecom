@@ -245,3 +245,14 @@ test('time_sync_interval sets a drifted panel clock and leaves an accurate one a
     teardown(ctx);
   }
 });
+
+test('an unanswered keep-alive reconnects instead of sitting on a dead session', async () => {
+  const ctx = await setup({ _connectTiming: { ...fast, keepaliveMs: 100 } });
+  try {
+    const loginsBefore = ctx.panel.commands.filter((c) => c.cmd === P.COMMAND.LOGIN).length;
+    ctx.panel.ignoreNext = { [P.COMMAND.GET_ZONE_STATE]: 2 }; // panel goes quiet for one full command
+    await until(() => ctx.panel.commands.filter((c) => c.cmd === P.COMMAND.LOGIN).length === loginsBefore + 1, 5000);
+  } finally {
+    teardown(ctx);
+  }
+});
