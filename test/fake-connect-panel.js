@@ -88,6 +88,11 @@ class FakeConnectPanel {
     this.send(Buffer.from([P.MESSAGE.AREA, 1, state]));
   }
 
+  /** Log event as sent by the panel (exposed for tests). */
+  sendLog(type, group, parameter, areas = 1) {
+    this.send(logBody(type, group, parameter, areas));
+  }
+
   /** Simulates the panel dropping the session to report an alarm. */
   dropForAlarm() {
     this.area = { state: 5, partArm: this.area.partArm };

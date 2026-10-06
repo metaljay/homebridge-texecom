@@ -155,3 +155,27 @@ test('a refused command is reported to HomeKit as a communication failure', asyn
     teardown(ctx);
   }
 });
+
+test('logs which zone caused an alarm (log event parameter)', async () => {
+  const warnings = [];
+  const panel = new FakeConnectPanel();
+  const port = await panel.listen();
+  const api = new EventEmitter();
+  Object.assign(api, {
+    hap, platformAccessory: PlatformAccessory,
+    registerPlatformAccessories() {}, updatePlatformAccessories() {}, unregisterPlatformAccessories() {},
+  });
+  const log = { ...silentLog, warn: (m) => warnings.push(m) };
+  const platform = new TexecomPlatform(log, {
+    protocol: 'connect', ip_address: '127.0.0.1', ip_port: port, udl: '1234', _connectTiming: fast,
+  }, api);
+  api.emit('didFinishLaunching');
+  try {
+    await until(() => platform.areas.size === 1);
+    panel.sendLog(3, 3, 3); // Interior zone alarm, group Alarm, zone 3
+    await until(() => warnings.some((w) => /zone 3 \(Kitchen\) in alarm/.test(w)));
+  } finally {
+    platform.shutdown();
+    panel.close();
+  }
+});
