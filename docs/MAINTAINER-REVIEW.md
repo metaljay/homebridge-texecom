@@ -474,7 +474,7 @@ On 6 Oct texecom2mqtt (Connect, via the SmartCom) and the plugin (Crestron, via 
 - **Message mapping:** `"U` = User Code; `"X` = In Exit / Exit Started; `"A` = Armed ("Open/Close (Away Armed)"); `"L` = In Alarm + Bell Active; `"E` = In Entry; `"D` = Disarmed ("Open After Alarm (Alarm Abort)" after an alarm).
 - **What Crestron can't tell you:** which zone caused an alarm (Connect: "last active zone: Kitchen"), which part arm was used (Connect: "Remote Part Arm 1"), and engineer activity (Wintex sessions show as Installer Programming and Download start/end; Crestron only shows `"U0000`, user 0).
 - **HomeKit Night and Home both arm Part Arm 1.** The Crestron `Y` command can't reach Part Arm 2 or 3.
-- **Connect isn't more reliable.** After each alarm and disarm, texecom2mqtt's commands timed out for 1–2 minutes. It reconnected repeatedly, twice reporting a corrupt response starting `0x41` (`A`), and missed a whole keypad arm and disarm. Crestron kept reporting throughout, apart from the blackout in 2.0b. One possible cause is the SmartCom being busy sending the alarm to the Texecom cloud/app. That is unconfirmed.
+- **Connect isn't more reliable.** After each alarm and disarm, texecom2mqtt's commands timed out for 1–2 minutes. It reconnected repeatedly, twice reporting a corrupt response starting `0x41` (`A`), and missed a whole keypad arm and disarm. Crestron kept reporting throughout, apart from the blackout in 2.0b. **Explained:** the texecom-connect README notes that while a program is connected, the module can't send events to the Texecom apps "except for when an alarm occurs, in which case the connection to this program will be forcibly dropped by the panel". The drop is deliberate. It is how the alarm push notification gets out (and it did reach the tester's phone). A Connect client should treat it as expected: reconnect, then re-read the full state.
 - Connect also reported an undocumented area state `6` straight after "Part Armed 1".
 - **User numbers:** the panel's own event log (5 years of history read from Wintex) only contains users 0 (engineer), 1, 3 and 4. So `"A00129` ("user 29") is a pseudo-user for arms made through the UDL/Crestron interface, not a real user slot. Remote arms and disarms are logged as user 0. These values aren't standard across panels, which supports keeping `app_users` / `remote_users` configurable.
 - **Wintex's saved event log** (`Customers/<name>.tlf`, under the Windows VirtualStore) is easy to read: 9-byte records of `[type][group][parameter][areas LE16][Unix time LE32]`, with types matching the Connect protocol's log event numbers. Event type **137** (parameters 100 and 102, group 9) appears during engineer programming and isn't in texecom2mqtt's list.
@@ -482,3 +482,35 @@ On 6 Oct texecom2mqtt (Connect, via the SmartCom) and the plugin (Crestron, via 
 ### Credits
 
 Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), David Brooke (Connect protocol), Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager).
+
+---
+
+## 7. Texecom Connect support (implemented in this branch)
+
+Because most users will repurpose a SmartCom (6.4), this branch adds a **Connect transport** alongside Crestron, selected with `"protocol": "connect"`. It's self-contained, so it can be lifted into your plugin independently of the rest of v5:
+
+```
+lib/connect/protocol.js   framing, CRC-8 (poly 0x85, init 0xFF), commands, message decoding
+lib/connect/client.js     TCP session: 2 s pre-login wait, login, event subscription,
+                          one command in flight, sequence-matched replies, 3.5 s x 5 retries,
+                          keep-alive every 30 s (the panel drops idle sessions after ~60 s),
+                          "+++" drop detection, reconnect with back-off
+lib/connectPanel.js       discovery (zones, types, area membership, area names), full
+                          state read on every (re)connect, part-arm tracking from log
+                          events, re-reads after Arm Failed / Auto Open-Close / unknown
+                          area state 6 / end of engineer programming, setMode() with
+                          reset-before-disarm and disarm-before-re-arm
+lib/connect/NOTICE        credits: texecom-connect (Apache-2.0, released with Texecom's
+                          approval) and texecom2mqtt (MIT, Daniel Chesterton)
+```
+
+The platform maps Connect area states to HomeKit as follows. Full arm is Away. Part Arm 1/2/3 use `part_arm_1`…`part_arm_3` (defaults night / stay / unused, as texecom2mqtt). "In exit" sets the target, so the Home app shows "Arming…". "In alarm" is Triggered. Zones and areas are discovered from the panel when the config lists none, and the accessory identities are the same as in Crestron mode, so switching transports keeps HomeKit setups.
+
+**Testing so far:**
+
+| | Status |
+|---|---|
+| Unit tests (framing, CRC, decoding, client retries/drops) and end-to-end tests with real HAP against a fake panel modelled on the test system: discovery, live zones and tamper, Night = Part Arm 1, Away, mode change, alarm during a session drop, reset-then-disarm, custom part-arm mapping, refused commands | passing |
+| Real panel, read-only (via SmartCom): login, panel ID, clock, power, keypad text, area/zone details, zone and area state reads, live zone events | **confirmed** |
+| Real panel, plugin in Connect mode in a test Homebridge: discovered 5 zones and area HOUSE, correct current states in HomeKit | **confirmed** |
+| Real panel: arm / disarm / reset over Connect | **not yet run**, pending a daytime test with the owner present |

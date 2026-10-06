@@ -14,25 +14,49 @@
         "required": true,
         "description": "Shown in the Homebridge log. You shouldn't need to change this."
       },
+      "protocol": {
+        "title": "Connection type",
+        "type": "string",
+        "default": "crestron",
+        "oneOf": [
+          {
+            "title": "Crestron (serial cable, ComIP or SmartCom with its COM port set to \"Crestron System\")",
+            "enum": [
+              "crestron"
+            ]
+          },
+          {
+            "title": "Texecom Connect (SmartCom or ComIP left in its normal mode)",
+            "enum": [
+              "connect"
+            ]
+          }
+        ],
+        "description": "Connect needs a Premier Elite on firmware v4 or later. It discovers zones and areas automatically, reports arm modes precisely and has no delay after arming from HomeKit. While connected, the official Texecom app can't use that module."
+      },
       "ip_address": {
         "title": "IP Address",
         "type": "string",
         "format": "ipv4",
         "placeholder": "192.168.1.50",
-        "description": "Address of the COM-IP module. Leave blank when using a serial connection."
+        "description": "Address of the ComIP/SmartCom (or serial-to-IP bridge). Leave blank when using a serial cable."
       },
       "ip_port": {
         "title": "IP Port",
         "type": "integer",
         "default": 10001,
         "minimum": 1,
-        "maximum": 65535
+        "maximum": 65535,
+        "description": "Crestron: the bridge's port. Connect: the module's UDL port (usually 10001)."
       },
       "serial_device": {
         "title": "Serial Device",
         "type": "string",
         "placeholder": "/dev/ttyUSB0",
-        "description": "Leave blank when using an IP connection."
+        "description": "Leave blank when using an IP connection.",
+        "condition": {
+          "functionBody": "return model.protocol !== 'connect';"
+        }
       },
       "baud_rate": {
         "title": "Baud Rate",
@@ -79,7 +103,7 @@
         "type": "string",
         "pattern": "^[0-9]{4,6}$",
         "placeholder": "1234",
-        "description": "The panel's UDL code. Required to arm/disarm from HomeKit; without it areas are read-only."
+        "description": "The panel's UDL code. Required for Connect, and for arming/disarming from HomeKit with Crestron."
       },
       "zones": {
         "title": "Zones",
@@ -139,7 +163,8 @@
               "description": "How long the sensor stays active after the panel reports the zone has cleared."
             }
           }
-        }
+        },
+        "description": "Optional with Connect: if no zones or areas are listed, they are read from the panel."
       },
       "areas": {
         "title": "Areas",
@@ -227,6 +252,108 @@
         "type": "boolean",
         "default": false,
         "description": "Log every message from the panel without enabling Homebridge-wide debug mode."
+      },
+      "part_arm_1": {
+        "title": "Part Arm 1 shows in HomeKit as",
+        "type": "string",
+        "default": "night",
+        "oneOf": [
+          {
+            "title": "Night",
+            "enum": [
+              "night"
+            ]
+          },
+          {
+            "title": "Home (Stay)",
+            "enum": [
+              "stay"
+            ]
+          },
+          {
+            "title": "Away",
+            "enum": [
+              "away"
+            ]
+          },
+          {
+            "title": "Not used",
+            "enum": [
+              ""
+            ]
+          }
+        ],
+        "condition": {
+          "functionBody": "return model.protocol === 'connect';"
+        }
+      },
+      "part_arm_2": {
+        "title": "Part Arm 2 shows in HomeKit as",
+        "type": "string",
+        "default": "stay",
+        "oneOf": [
+          {
+            "title": "Night",
+            "enum": [
+              "night"
+            ]
+          },
+          {
+            "title": "Home (Stay)",
+            "enum": [
+              "stay"
+            ]
+          },
+          {
+            "title": "Away",
+            "enum": [
+              "away"
+            ]
+          },
+          {
+            "title": "Not used",
+            "enum": [
+              ""
+            ]
+          }
+        ],
+        "condition": {
+          "functionBody": "return model.protocol === 'connect';"
+        }
+      },
+      "part_arm_3": {
+        "title": "Part Arm 3 shows in HomeKit as",
+        "type": "string",
+        "default": "",
+        "oneOf": [
+          {
+            "title": "Night",
+            "enum": [
+              "night"
+            ]
+          },
+          {
+            "title": "Home (Stay)",
+            "enum": [
+              "stay"
+            ]
+          },
+          {
+            "title": "Away",
+            "enum": [
+              "away"
+            ]
+          },
+          {
+            "title": "Not used",
+            "enum": [
+              ""
+            ]
+          }
+        ],
+        "condition": {
+          "functionBody": "return model.protocol === 'connect';"
+        }
       }
     }
   },
@@ -236,6 +363,7 @@
       "type": "fieldset",
       "title": "Connection",
       "items": [
+        "protocol",
         "ip_address",
         "ip_port",
         "serial_device",
@@ -291,6 +419,9 @@
       "expandable": true,
       "expanded": false,
       "items": [
+        "part_arm_1",
+        "part_arm_2",
+        "part_arm_3",
         "default_arm_state",
         {
           "key": "remote_users",

@@ -21,7 +21,7 @@ You can also set automations to happen when you arm the alarm and when the alarm
 
 ## Upgrading from 4.x
 
-Version 5 moves zones and areas behind the Homebridge bridge (previously each one was published as a separate "external" accessory that had to be paired individually).
+Version 5 adds Texecom Connect support (see below) and moves zones and areas behind the Homebridge bridge (previously each one was published as a separate "external" accessory that had to be paired individually).
 
 1. After upgrading, remove the old individually-paired Texecom accessories from the Home app.
 2. Restart Homebridge. The zones and areas appear automatically as part of your bridge.
@@ -30,6 +30,31 @@ Version 5 moves zones and areas behind the Homebridge bridge (previously each on
 Your existing config keeps working. If your UDL code starts with a `0`, re-enter it as a quoted string (e.g. `"0123"`), because numbers drop leading zeros.
 
 It's recommended to run this plugin as a [child bridge](https://github.com/homebridge/homebridge/wiki/Child-Bridges) so a panel connection problem can't affect your other accessories.
+
+## Choosing a connection
+
+| | Crestron (default) | Texecom Connect (`"protocol": "connect"`) |
+|---|---|---|
+| Hardware | Serial cable (PC-COM/USB-COM), a ComIP, a SmartCom with its COM port set to **Crestron System**, or a serial-to-IP bridge | A **SmartCom or ComIP left in its normal mode** (Premier Elite, firmware v4+) |
+| Zones and areas | Listed in the config | **Read from the panel automatically** (or listed to override) |
+| Arm modes in HomeKit | Guessed for keypad arms (`default_arm_state`) | **Exact**: Full = Away, Part Arm 1/2/3 mapped with `part_arm_1`…`part_arm_3` |
+| "Arming…" during the exit delay | No | Yes |
+| After arming/disarming from HomeKit | Panel events are held back for up to ~60 s | No delay |
+| Official Texecom app | Lost if you repurpose the SmartCom | Can't use the module while the plugin is connected |
+
+Connect example — this is all that's needed:
+
+```json
+{
+    "platform": "Texecom",
+    "protocol": "connect",
+    "ip_address": "192.168.1.70",
+    "ip_port": 10001,
+    "udl": "1234"
+}
+```
+
+In Wintex (or at the panel), the module's COM port must be set to its normal type ("SmartCom" / "ComIP Module") and **Encrypted Ports** must be off for it. The panel briefly drops the connection when it reports an alarm through the module; the plugin reconnects and re-reads the state automatically.
 
 ## Configuration
 
@@ -133,6 +158,8 @@ This plugin is a platform plugin so you must configure each zone from your Texec
 | `default_arm_state` | `"away"` | How an arm by a keypad user is shown in HomeKit (`away`, `night` or `stay`). The panel doesn't say whether an arm was full or part. |
 | `remote_users` | [] | Panel user numbers for remotes/keyfobs; their arms are always shown as Away |
 | `trigger_from_zones` | false | Mark an armed area as triggered when one of its zones goes active (outside the entry delay). Leave off unless your panel doesn't report alarms itself. |
+| `protocol` | `"crestron"` | `"crestron"` or `"connect"` (see *Choosing a connection*) |
+| `part_arm_1` / `part_arm_2` / `part_arm_3` | `"night"` / `"stay"` / `""` | Connect only: how each part arm is shown in HomeKit (`night`, `stay`, `away`, or `""` for unused). HomeKit Night/Home arm the first part arm mapped to that mode |
 | `debug` | false | Log every message received from the panel without enabling Homebridge-wide debug mode |
 
 ### Tamper reporting

@@ -25,6 +25,7 @@ This change log documents all release versions of homebridge-texecom
 - **FIX** - Command timeout raised to 5 s: a real COM-IP took 3 s to acknowledge a login
 - **NEW** - Recognises keypad (`U`), exit delay (`X`) and entry delay (`E`) messages from the panel
 - **NEW** - Regression test replaying a real panel session (`test/fixtures/real-session-2026-10-06.json`)
+- **NEW** - **Texecom Connect support** (`"protocol": "connect"`) for a SmartCom/ComIP left in its normal mode: automatic zone/area discovery, exact arm modes (part arms mapped with `part_arm_1`…`part_arm_3`), "Arming…" during the exit delay, no post-command event delay, reset-before-disarm after an alarm, and automatic recovery when the panel drops the session to report an alarm. Protocol code credits: texecom-connect (Apache-2.0) and texecom2mqtt (MIT) — see `lib/connect/NOTICE`
 - **TWEAK** - Supports Homebridge `^1.8.0 || ^2.0.0` and Node `^20.18.0 || ^22.10.0 || ^24.0.0`
 - **TWEAK** - Code split into `lib/` modules; uses the Homebridge logger directly
 - **TWEAK** - Removed the unmaintained `string` and `zpad` packages and the unused `debug`, `crypto-js` and `@serialport/parser-readline` packages; `serialport` upgraded to v13
