@@ -9,15 +9,13 @@
 
 ## Summary
 
-I forked `master` (4.3.0) and reviewed it against current Homebridge plugin practice. That produced a set of fixes and a restructured "v5" version of the plugin, which is in this repository.
+This is a review of `homebridge-texecom-full` against current Homebridge plugin practice, tested against your `4.4.0-beta.1` and on a live Premier Elite installation. It covers:
 
-Afterwards I found your `4.3.1-beta.x` and `4.4.0-beta.x` branches. They had already fixed many of the same problems, and in several places your fixes are better than mine, particularly the accessory UUID compatibility with 4.2.8 and 4.3.0. **I'm not asking you to merge the v5 rewrite.** That would discard your beta work and orphan every user's accessories.
+1. problems your beta already fixes, for reference;
+2. **problems still present in `4.4.0-beta.1`**, with evidence and a small suggested patch against *your* code for each. The most serious, lost keypad disarms causing false alarms in HomeKit, is first;
+3. a restructured reference version ("v5", in this branch) that implements all of the fixes with tests, in case you want to adopt some or all of it.
 
-This document lists:
-
-1. what your beta already fixes, so you can skip those parts of the v5 code;
-2. **the problems that are still present in `4.4.0-beta.1`**, with evidence and a small suggested patch against *your* code for each;
-3. how the v5 version is structured, in case you ever want to adopt some or all of it.
+**The suggested route is small patches against your beta, not merging v5 wholesale.** v5 uses a different accessory UUID scheme, so adopting it as-is would orphan existing users' accessories (see section 1).
 
 Everything marked *Reproduced* was run against your beta branch using real Homebridge (1.11.4) and a fake COM-IP panel. The panel is included as [`tools/fake-panel.js`](../tools/fake-panel.js), so you can repeat the tests.
 
@@ -25,7 +23,7 @@ Items marked **Confirmed on real hardware** were observed on a user's live insta
 
 ---
 
-## 1. Already fixed in your beta (nothing to do)
+## 1. Already fixed in your beta
 
 | Problem in 4.3.0 | Fixed in your beta | v5 equivalent |
 |---|---|---|
@@ -39,11 +37,11 @@ Items marked **Confirmed on real hardware** were observed on a user's live insta
 | `engines.homebridge` excluded 1.x | 4.3.1-beta.0 | `package.json` |
 | Unused `crypto-js` | 4.3.1-beta.0 | `package.json` |
 
-**Your beta does several things v5 does not. Anything merged from v5 should keep them:**
+**Things in your beta that should be kept whatever is adopted from v5:**
 
 - **UUIDs compatible with 4.2.8 (`Texecom:<name>`) and 4.3.0.** v5 uses a new scheme, `homebridge-texecom-full:zone:7`, which would make every existing user re-pair and rebuild their automations. That part of v5 should **not** be adopted.
-- **Configurable `remote_users` / `default_arm_state`** (#25). v5 has now adopted this with the same config keys and the same order of checks (remote user, then the HomeKit request, then the default). Before that, real-panel testing showed v5 reporting keypad arms as Night.
-- **User numbers above 99.** v5 now parses them the same way as your regex.
+- **Configurable `remote_users` / `default_arm_state`** (#25). v5 uses the same config keys and the same order of checks (remote user, then the HomeKit request, then the default).
+- **User numbers above 99.** v5 parses them the same way as your regex.
 - **Combined areas and panel clock sync.**
 
 ---
@@ -259,16 +257,16 @@ if (!newState && me.dwell_time > 0) { me.dwell_timer = setTimeout(...); } else {
 
 ## 3. Proposals that need checking against real hardware
 
-These are in v5 but are **not verified on a panel**. I'd ask you before relying on them.
+These are in v5 but are **not verified on a panel**, and are worth checking before relying on them.
 
-- **Tamper reporting.** v5 sets HomeKit `StatusTampered` when a zone status digit is anything other than `0` or `1`. I believe `2` is tamper in the Crestron protocol, but haven't confirmed it.
-- **Arm state shown immediately after `OK`.** Both your beta and v5 show the target state as soon as the panel acknowledges, rather than waiting for the arm event after the exit delay. This matches the old behaviour, so I've left it alone.
+- **Tamper reporting.** v5 sets HomeKit `StatusTampered` when a zone status digit is anything other than `0` or `1`. `2` is believed to be tamper in the Crestron protocol. Real-panel testing only ever saw `0` and `1`, so this is unconfirmed.
+- **Arm state shown immediately after `OK`.** Both your beta and v5 show the target state as soon as the panel acknowledges, rather than waiting for the arm event after the exit delay. This matches the existing behaviour and is unchanged.
 
 ---
 
 ## 4. Suggested route
 
-If any of section 2 is useful, the least disruptive way to bring it in is **one small pull request per item against your `4.4.0-beta` branch**, using the patches above, rather than merging the v5 restructure. Each one is easy to review and revert. I can prepare those branches if you'd like.
+If any of section 2 is useful, the least disruptive way to bring it in is **one small pull request per item against your `4.4.0-beta` branch**, using the patches above, rather than merging the v5 restructure. Each one is easy to review and revert. Separate branches for each can be prepared on request.
 
 The v5 structure (section 5) is there as a reference if you ever want to split `index.js` into modules and add tests. The protocol and connection tests in `test/` would carry over with little change.
 
@@ -289,8 +287,13 @@ lib/zoneAccessory.js     One zone → one HomeKit sensor, dwell timer, tamper
 lib/areaAccessory.js     One area → HomeKit SecuritySystem, onSet → panel commands,
                          state persisted in accessory.context
 test/                    node:test unit tests (protocol parsing, line framing, bitmask,
-                         command queue against a local TCP server)
+                         command queue against a local TCP server, and a replay of the
+                         real panel session through the platform with real HAP)
 tools/fake-panel.js      Fake COM-IP panel for manual end-to-end testing
+tools/replay-panel.js    Replays a recorded session (with original TCP chunking) to any build
+tools/hotfix-4.4.0-beta.1.py
+                         Stop-gap for installed 4.4.0-beta.1: line framing, 5 s timeout,
+                         clears area zone lists (disables zone-inferred alarms)
 eslint.config.js         ESLint 9 flat config
 ```
 
