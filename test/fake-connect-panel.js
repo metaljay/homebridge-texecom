@@ -175,6 +175,11 @@ class FakeConnectPanel {
         const { state, partArm } = this.area;
         if (state === 5) {
           all[P.AREA_FLAG.ALARM] = 1;
+        } else if (state === 1) {
+          all[P.AREA_FLAG.EXIT] = 1;
+        } else if (state === 2) {
+          all[P.AREA_FLAG.ARMED] = 1;
+          all[P.AREA_FLAG.ENTRY] = 1;
         } else if (state === 3) {
           all[P.AREA_FLAG.ARMED] = 1;
           all[P.AREA_FLAG.FULL_ARMED] = 1;

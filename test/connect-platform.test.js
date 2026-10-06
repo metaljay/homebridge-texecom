@@ -281,3 +281,19 @@ test('panels that refuse bulk area-flag reads fall back to single-flag reads', a
     panel.close();
   }
 });
+
+test('an idle re-read during the exit delay keeps "Arming..." (does not flip to Disarmed)', async () => {
+  const ctx = await setup({ _connectTiming: { ...fast, keepaliveMs: 60 } });
+  try {
+    ctx.panel.exitMs = 600; // long exit so several idle re-reads happen during it
+    const current = ctx.area.service.getCharacteristic(Current);
+    const target = ctx.area.service.getCharacteristic(Target);
+    const seen = [];
+    target.on('change', ({ newValue }) => seen.push(newValue));
+    await ctx.area.setTargetState(Target.NIGHT_ARM);
+    await until(() => current.value === Current.NIGHT_ARM, 4000);
+    assert.ok(!seen.includes(Target.DISARM), `target flipped to disarm during exit: ${seen}`);
+  } finally {
+    teardown(ctx);
+  }
+});

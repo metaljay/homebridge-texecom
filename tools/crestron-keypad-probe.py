@@ -4,7 +4,11 @@ Drive the panel's virtual keypad over a Crestron-mode port (no UDL login),
 as github.com/JumpMaster/TexecomManager does, and watch whether the event
 feed keeps flowing. Interactive: you choose every key.
 
-  python3 crestron-keypad-probe.py <panel-ip> <port> [homebridge-container]
+  python3 crestron-keypad-probe.py <panel-ip> <port> [homebridge-container] [--no-crlf]
+
+--no-crlf sends KEY commands without a line ending, as the
+homebridge-texecom-connect plugin (garethflowers) does; TexecomManager sends
+them with CR LF. Queries (ASTATUS/LSTATUS) always use CR LF.
 
 You are asked for a keypad user code at a hidden prompt; it is only sent to
 the panel as keypresses and never printed. If a Homebridge container name is
@@ -60,14 +64,21 @@ def reader(sock, stop):
             print(f"\n  {stamp()} <- {line!r}", flush=True)
 
 
+NO_CRLF = False
+
+
 def send_line(sock, text, shown=None):
-    print(f"  {stamp()} -> {shown or text}")
-    sock.sendall(text.encode() + b"\r\n")
+    ending = b"" if NO_CRLF and text.startswith("KEY") else b"\r\n"
+    print(f"  {stamp()} -> {shown or text}{'' if ending else '  (no line ending)'}")
+    sock.sendall(text.encode() + ending)
 
 
 def main():
-    global T0
+    global T0, NO_CRLF
     args = sys.argv[1:]
+    if "--no-crlf" in args:
+        args.remove("--no-crlf")
+        NO_CRLF = True
     if len(args) < 2:
         sys.exit(__doc__)
     host, port = args[0], int(args[1])

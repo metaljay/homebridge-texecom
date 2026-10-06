@@ -245,3 +245,19 @@ test('stop() during the pre-login delay leaves nothing running', async () => {
   server.close();
   assert.equal(client.socket, null);
 });
+
+test('area flags decode exit and entry in progress (not "disarmed")', () => {
+  const exit = Buffer.alloc(72);
+  exit[P.AREA_FLAG.EXIT] = 1;
+  assert.deepEqual(P.decodeAreaFlags(exit, [1], 24), { 1: { state: 'in exit', partArm: null } });
+  const entry = Buffer.alloc(72);
+  entry[P.AREA_FLAG.ARMED] = 1;
+  entry[P.AREA_FLAG.ENTRY] = 1;
+  assert.deepEqual(P.decodeAreaFlags(entry, [1], 24), { 1: { state: 'in entry', partArm: null } });
+  // Real Elite 24 V6.05.03 flags while disarmed: 16 Ready, 25 Force Armable,
+  // 29 Bell SCB, 32 Detector Reset, 55 Arm Fail Warning, 67 LED control.
+  const real = Buffer.from('0000000000000000000000000000000003000000000000000003000000ff000003000000000000000000000000000000000000000000000100000000000000000000000100000000', 'hex');
+  assert.deepEqual(P.decodeAreaFlags(real, [1, 2], 24), {
+    1: { state: 'disarmed', partArm: null }, 2: { state: 'disarmed', partArm: null },
+  });
+});
