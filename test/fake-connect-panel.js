@@ -120,7 +120,16 @@ class FakeConnectPanel {
         reply(Buffer.from([args.toString('latin1') === this.udl ? P.ACK : P.NAK]));
         break;
       case P.COMMAND.SET_EVENT_MESSAGES:
-      case P.COMMAND.GET_DATE_TIME:
+        ack();
+        break;
+      case P.COMMAND.GET_DATE_TIME: {
+        const t = new Date(Date.now() + (this.clockOffsetMs || 0));
+        reply(P.encodeDateTime(t));
+        break;
+      }
+      case P.COMMAND.SET_DATE_TIME:
+        this.clockSetTo = [...args];
+        this.clockOffsetMs = 0;
         ack();
         break;
       case P.COMMAND.GET_PANEL_IDENTIFICATION:

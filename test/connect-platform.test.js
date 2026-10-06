@@ -231,3 +231,17 @@ test('failed start-up reads cause a reconnect and a clean retry', async () => {
     panel.close();
   }
 });
+
+test('time_sync_interval sets a drifted panel clock and leaves an accurate one alone', async () => {
+  const ctx = await setup({ time_sync_interval: 24 });
+  try {
+    const panel = ctx.platform.connectPanel;
+    ctx.panel.clockOffsetMs = 20 * 1000;
+    assert.equal(await panel.syncClock(), false); // 20 s: within tolerance
+    ctx.panel.clockOffsetMs = -5 * 60 * 1000;
+    assert.equal(await panel.syncClock(), true); // 5 min behind: set
+    assert.equal(ctx.panel.clockSetTo.length, 6);
+  } finally {
+    teardown(ctx);
+  }
+});

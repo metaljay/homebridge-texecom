@@ -354,6 +354,17 @@
         "condition": {
           "functionBody": "return model.protocol === 'connect';"
         }
+      },
+      "time_sync_interval": {
+        "title": "Panel clock check (hours)",
+        "type": "integer",
+        "default": 0,
+        "minimum": 0,
+        "maximum": 744,
+        "description": "Connect only: how often to compare the panel clock with this machine's and correct it if it's more than a minute out (also checked shortly after connecting). 0 = off. Same option as upstream 4.4.",
+        "condition": {
+          "functionBody": "return model.protocol === 'connect';"
+        }
       }
     }
   },
@@ -422,6 +433,7 @@
         "part_arm_1",
         "part_arm_2",
         "part_arm_3",
+        "time_sync_interval",
         "default_arm_state",
         {
           "key": "remote_users",

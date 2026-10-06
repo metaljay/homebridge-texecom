@@ -160,6 +160,7 @@ This plugin is a platform plugin so you must configure each zone from your Texec
 | `trigger_from_zones` | false | Mark an armed area as triggered when one of its zones goes active (outside the entry delay). Leave off unless your panel doesn't report alarms itself. |
 | `protocol` | `"crestron"` | `"crestron"` or `"connect"` (see *Choosing a connection*) |
 | `part_arm_1` / `part_arm_2` / `part_arm_3` | `"night"` / `"stay"` / `""` | Connect only: how each part arm is shown in HomeKit (`night`, `stay`, `away`, or `""` for unused). HomeKit Night/Home arm the first part arm mapped to that mode |
+| `time_sync_interval` | 0 | Connect only: hours between panel clock checks; the clock is corrected if more than a minute out. 0 = off |
 | `debug` | false | Log every message received from the panel without enabling Homebridge-wide debug mode |
 
 ### Tamper reporting
