@@ -16,7 +16,9 @@ This is a review of `homebridge-texecom-full` against current Homebridge plugin 
 3. a restructured reference version ("v5", in this branch) that implements all of the fixes with tests, in case you want to adopt some or all of it;
 4. what other Texecom projects do differently, and what's worth copying (section 6).
 
-**The suggested route is small patches against your beta, not merging v5 wholesale.** v5 uses a different accessory UUID scheme, so adopting it as-is would orphan existing users' accessories (see section 1).
+**Biggest strategic point:** most users will connect through a **repurposed SmartCom**, which can't do Crestron at all. Supporting the **Texecom Connect protocol** (as texecom2mqtt does) would serve far more users, and it avoids the post-command event blackout found in 2.0b. See 6.4.
+
+**The suggested route for the existing Crestron code is small patches against your beta, not merging v5 wholesale.** v5 uses a different accessory UUID scheme, so adopting it as-is would orphan existing users' accessories (see section 1).
 
 Everything marked *Reproduced* was run against your beta branch using real Homebridge (1.11.4) and a fake COM-IP panel. The panel is included as [`tools/fake-panel.js`](../tools/fake-panel.js), so you can repeat the tests.
 
@@ -452,7 +454,7 @@ A periodic `ASTATUS` (confirmed to work, 6.2) would give this plugin the same ap
 
 The Connect protocol reports things Crestron can't: **which** part-arm (1/2/3) was used, explicit "in exit" and "in entry" states (HomeKit's "Arming…"), zone names and area membership straight from the panel, fault, masked and bypassed flags, power supply readings, and the full event log. It needs a Premier Elite on v4+ firmware with a ComIP, ComWifi or SmartCom, and like Crestron it takes over that connection (only one app per module).
 
-Crestron remains the simpler option and works over serial and on older panels. A reasonable direction is to keep this plugin on Crestron, adopt the fixes in section 2 and the state queries in 6.2, and point users who want richer data at a Connect-based plugin.
+**Most users will only have a SmartCom**, and a SmartCom can't serve Crestron: its COM port must be set to "SmartCom". Crestron needs a COM port set to "Crestron System" plus a serial cable or a serial-to-IP bridge (an official ComIP, or a DIY ESP8266 as on the test system). The realistic path for most people is to **repurpose their SmartCom**, giving up the official app in exchange for HomeKit. That points to **Connect protocol support as the plugin's main transport**, with Crestron kept for serial and bridge users. It also removes the UDL-session blackout (2.0b) entirely, because Connect arm/disarm commands are acknowledged in-protocol and don't silence the event feed. The trade-offs seen on the test panel: the Connect session stalled for 1–2 minutes after alarms (6.5), and Wintex was able to connect through the same SmartCom at the same time as texecom2mqtt. Existing Connect implementations to learn from: texecom2mqtt (reviewed above), davidMbrooke/texecom-connect, and garethflowers/homebridge-texecom-connect.
 
 ### 6.5 Side by side on the same panel
 
