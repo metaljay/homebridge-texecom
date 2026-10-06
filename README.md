@@ -5,7 +5,7 @@
 [![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
 # homebridge-texecom-full
 
-A plugin for [Homebridge](https://github.com/nfarina/homebridge) that creates HomeKit motion, contact, smoke, or carbon monoxide sensors for alarm zones from a Texecom Premier intruder alarm via a serial connection or COM-IP module.
+A plugin for [Homebridge](https://github.com/homebridge/homebridge) that creates HomeKit motion, contact, smoke, or carbon monoxide sensors for alarm zones from a Texecom Premier intruder alarm via a serial connection or COM-IP module.
 
 You can receive notifications, which can be set to work only when you're away from home:
 
@@ -19,6 +19,18 @@ You can also set automations to happen when you arm the alarm and when the alarm
 
 **IMPORTANT** - To use this plugin you will require a Texecom alarm system and a PC-COM, COM-IP or USB-COM serial interface. If using the PC-COM or USB-COM, you must also have nothing already utilising COM1 on the alarm panel, or be able to move existing modules connected to COM1 to a different COM port on the alarm panel. The support for IP is new and is intended for use with the COM-IP -- we don't know if it works with the SmartCom, so let us know if you get it working.
 
+## Upgrading from 4.x
+
+Version 5 moves zones and areas behind the Homebridge bridge (previously each one was published as a separate "external" accessory that had to be paired individually).
+
+1. After upgrading, remove the old individually-paired Texecom accessories from the Home app.
+2. Restart Homebridge. The zones and areas appear automatically as part of your bridge.
+3. Re-assign rooms and recreate any automations that used the old accessories.
+
+Your existing config keeps working. If your UDL code starts with a `0`, re-enter it as a quoted string (e.g. `"0123"`), because numbers drop leading zeros.
+
+It's recommended to run this plugin as a [child bridge](https://github.com/homebridge/homebridge/wiki/Child-Bridges) so a panel connection problem can't affect your other accessories.
+
 ## Configuration
 
 Texecom zones must be configured individually in the Homebridge config.json file with the appropriate zone number from Texecom. Configuring areas is optional, but is required if you want to see if the alarm if set or have automations or notifications when the alarm is armed, disarmed or triggered. You probably have many zones and only one area.
@@ -31,23 +43,23 @@ Example:
         "platform": "Texecom",
         "serial_device": "/dev/ttyUSB0",
         "baud_rate": 19200,
-        "udl":1234,
+        "udl": "1234",
         "zones": [
             {
                 "name": "Living Room",
-                "zone_number": "7",
+                "zone_number": 7,
                 "zone_type": "motion",
                 "dwell": 1000
             },
             {
                 "name": "Front Door",
-                "zone_number": "15",
+                "zone_number": 15,
                 "zone_type": "contact",
                 "dwell": 1000
             },
             {
                 "name": "Back Yard",
-                "zone_number": "19",
+                "zone_number": 19,
                 "zone_type": "motion",
                 "dwell": 1000
             }
@@ -55,16 +67,14 @@ Example:
         "areas": [
             {
                 "name": "Inside",
-                "area_number": "1",
+                "area_number": 1,
                 "area_type": "securitysystem",
-                "dwell": 0,
                 "zones":[7,15]
             },
             {
                 "name": "Outside",
-                "area_number": "2",
+                "area_number": 2,
                 "area_type": "securitysystem",
-                "dwell": 0,
                 "zones":[19]
             }
         ]
@@ -94,7 +104,7 @@ For UDL
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `udl` | 1234 | The UDL code on the panel to be able to arm and disarm alarm |
+| `udl` | N/A | The panel's UDL code (as a string, e.g. `"1234"`). Required to arm/disarm from HomeKit; without it areas are read-only. |
 
 ### Per-zone Configuration
 
@@ -102,20 +112,29 @@ This plugin is a platform plugin so you must configure each zone from your Texec
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `name` | N/A | The name of the area as it will appear in HomeKit, e.g. 'Texecom Alarm'. |
-| `zone_number` | N/A | The zone number from Texecom |
+| `name` | N/A | The name of the sensor as it will appear in HomeKit. |
+| `zone_number` | N/A | The zone number from Texecom (1–640) |
 | `zone_type` | `"motion"` | The type of zone; motion, contact, smoke, or carbonmonoxide |
-| `dwell` | 0 | The amount of time in ms that a zone stays active after zone activation is cleared by Texecom |
+| `dwell` | 0 | How long (in milliseconds) a zone stays active after the panel reports it has cleared |
 
 ### Per-area Configuration
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `name` | N/A | The name of the sensor as it will appear in HomeKit. |
-| `area_number` | N/A | The area number from Texecom, usually 1. |
+| `name` | N/A | The name of the area as it will appear in HomeKit, e.g. 'Texecom Alarm'. |
+| `area_number` | N/A | The area number from Texecom, usually 1. Only areas 1–8 can be armed/disarmed from HomeKit. |
 | `area_type` | `"securitysystem"` | The type of area; only securitysystem is supported. |
-| `dwell` | 0 |  |
-| `zones` | N/A | Add all the zone numbers to the area to be able to trigger alarm and the corresponding area |
+| `zones` | N/A | Zone numbers in this area. When one of them activates while the area is armed away, HomeKit shows the area as triggered. |
+
+### Other options
+
+| Key | Default | Description |
+| --- | --- | --- |
+| `debug` | false | Log every message received from the panel without enabling Homebridge-wide debug mode |
+
+### Tamper reporting
+
+Each zone sensor exposes HomeKit's *Tampered* status. A zone is reported as tampered when the panel sends a status other than secure (`0`) or active (`1`).
 
 ## Configuring Texecom
 
@@ -132,7 +151,7 @@ To configure your COM1 port for the Crestron protocol:
 7. Press "Yes" to confirm and save.
 8. Scroll until you find UDL.
 9. Press "Yes" to go into it.
-10. Press "No" to edit and change it to disired UDL code.
+10. Press "No" to edit and change it to desired UDL code.
 11. Press "Yes" to confirm and save.
 
 Press "Menu" repeatedly to exit the engineer menu.
@@ -148,6 +167,12 @@ Alarm systems are complicated and have a lot of features, not all them are suita
 * **Panic buttons** - Investigate the possibility of integrating the medical, panic, and fire buttons into HomeKit as buttons/switches to manually trigger those alerts.
 
 
-## Config Schema
+## Development
 
-If someone can make the config.schema.json interface pretty and improve on it it will be appreciated.
+```bash
+npm install
+npm run lint
+npm test
+```
+
+The protocol parsing (`lib/protocol.js`) and the connection/command queue (`lib/connection.js`) are covered by unit tests that run against a fake COM-IP server, so no panel is needed.

@@ -2,6 +2,29 @@
 
 This change log documents all release versions of homebridge-texecom
 
+### 5.0.0
+
+**Breaking:** accessories now appear behind the Homebridge bridge instead of being published as separate external accessories. Remove the old Texecom accessories from the Home app once, then restart Homebridge. See "Upgrading from 4.x" in the README.
+
+- **FIX** - The first arm/disarm from HomeKit after any panel event was silently ignored (the `setByAlarm` flag was never cleared because `updateValue` doesn't trigger `onSet`)
+- **FIX** - Areas 5–8 sent the wrong area bitmask when arming/disarming, and area 8 was sent as two bytes
+- **FIX** - IP connections now split incoming data into lines, so messages split across or combined in TCP packets are no longer lost
+- **FIX** - A command's timeout timer kept running after `OK` arrived and could resend the command; commands are now queued so login + arm sequences never interleave
+- **FIX** - An area event for an area missing from the config (or configured out of order) could crash Homebridge
+- **FIX** - Repeated zone clears could leave several dwell timers running
+- **FIX** - Connection errors were only logged when debug was on
+- **NEW** - Dynamic platform with accessory caching: rooms, names and automations survive restarts, and zones/areas removed from the config are cleaned up
+- **NEW** - Area state (and away-armed status) is restored from cache on restart instead of always showing Disarmed
+- **NEW** - Zones report HomeKit *Tampered* status
+- **NEW** - Serial port reconnects automatically; TCP uses keep-alive and exponential back-off; connections close cleanly on Homebridge shutdown
+- **NEW** - Failed arm/disarm attempts return a proper HomeKit error, so the Home app shows "No Response" instead of a false success
+- **NEW** - Config schema: UDL is a string (keeps leading zeros), zone/area numbers are integers with limits, layout split into sections, removed "Official" wording
+- **NEW** - Config validation with clear log messages for missing or duplicate zone/area numbers
+- **TWEAK** - Supports Homebridge `^1.8.0 || ^2.0.0` and Node `^20.18.0 || ^22.10.0 || ^24.0.0`
+- **TWEAK** - Code split into `lib/` modules; uses the Homebridge logger directly
+- **TWEAK** - Removed the unmaintained `string` and `zpad` packages and the unused `debug`, `crypto-js` and `@serialport/parser-readline` packages; `serialport` upgraded to v13
+- **TWEAK** - Added ESLint and unit tests (`npm run lint`, `npm test`)
+
 ### 4.3.0 (2026-05-23)
 
 - **FIX** - Homebridge v2 compatibility: updated to new platform API with `didFinishLaunching` and `configureAccessory`

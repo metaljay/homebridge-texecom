@@ -1,137 +1,195 @@
 {
-    "title": "Texecom",
-    "pluginAlias": "Texecom",
-    "pluginType": "platform",
-    "headerDisplay": "Official Texecom Homebridge plugin.",
-    "singular": true,
-    "schema": {
-        "type": "object",
-        "properties": {
+  "pluginAlias": "Texecom",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Integrates Texecom Premier / Premier Elite panels via the Crestron protocol over a serial cable (PC-COM / USB-COM) or COM-IP. Configure **either** a serial device **or** an IP address.",
+  "footerDisplay": "Arm/disarm from HomeKit requires the panel's UDL code and supports areas 1–8.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Name",
+        "type": "string",
+        "default": "Texecom",
+        "required": true,
+        "description": "Shown in the Homebridge log. You shouldn't need to change this."
+      },
+      "ip_address": {
+        "title": "IP Address",
+        "type": "string",
+        "format": "ipv4",
+        "placeholder": "192.168.1.50",
+        "description": "Address of the COM-IP module. Leave blank when using a serial connection."
+      },
+      "ip_port": {
+        "title": "IP Port",
+        "type": "integer",
+        "default": 10001,
+        "minimum": 1,
+        "maximum": 65535
+      },
+      "serial_device": {
+        "title": "Serial Device",
+        "type": "string",
+        "placeholder": "/dev/ttyUSB0",
+        "description": "Leave blank when using an IP connection."
+      },
+      "baud_rate": {
+        "title": "Baud Rate",
+        "type": "integer",
+        "default": 19200,
+        "oneOf": [
+          { "title": "9600", "enum": [9600] },
+          { "title": "19200 (typical)", "enum": [19200] },
+          { "title": "38400", "enum": [38400] },
+          { "title": "57600", "enum": [57600] },
+          { "title": "115200", "enum": [115200] }
+        ],
+        "condition": {
+          "functionBody": "return !!model.serial_device;"
+        }
+      },
+      "udl": {
+        "title": "UDL Code",
+        "type": "string",
+        "pattern": "^[0-9]{4,6}$",
+        "placeholder": "1234",
+        "description": "The panel's UDL code. Required to arm/disarm from HomeKit; without it areas are read-only."
+      },
+      "zones": {
+        "title": "Zones",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
             "name": {
-                "type": "string",
-                "title": "Name",
-                "required": true,
-                "default": "Texecom",
-                "description": "You shouldn't need to change this."
+              "title": "Zone Name",
+              "type": "string",
+              "required": true
             },
-            "ip_address": {
-                "type": "string",
-                "format": "ipv4",
-                "title": "IP Address"
+            "zone_number": {
+              "title": "Zone Number",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 640,
+              "required": true
             },
-            "ip_port": {
-                "type": "integer",
-                "default": 10001,
-                "title": "IP Port"
+            "zone_type": {
+              "title": "Zone Type",
+              "type": "string",
+              "default": "motion",
+              "required": true,
+              "oneOf": [
+                { "title": "Motion", "enum": ["motion"] },
+                { "title": "Contact (door/window)", "enum": ["contact"] },
+                { "title": "Smoke", "enum": ["smoke"] },
+                { "title": "Carbon Monoxide", "enum": ["carbonmonoxide"] }
+              ]
             },
-            "serial_device": {
-                "type": "string",
-                "example": "/dev/ttyUSB0",
-                "title": "Serial Device"
+            "dwell": {
+              "title": "Dwell Time (ms)",
+              "type": "integer",
+              "default": 0,
+              "minimum": 0,
+              "description": "How long the sensor stays active after the panel reports the zone has cleared."
+            }
+          }
+        }
+      },
+      "areas": {
+        "title": "Areas",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "title": "Area Name",
+              "type": "string",
+              "required": true
             },
-            "baud_rate": {
-                "type": "integer",
-                "enum": [
-                    9600,
-                    19200,
-                    38400,
-                    57600,
-                    115200
-                ],
-                "title": "Baud Rate"
+            "area_number": {
+              "title": "Area Number",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64,
+              "required": true,
+              "description": "Areas above 8 report status only; they cannot be armed from HomeKit."
             },
-            "udl": {
-                "type": "integer",
-                "minLength": 4,
-                "maxLength": 6,
-                "title": "UDL"
+            "area_type": {
+              "title": "Area Type",
+              "type": "string",
+              "default": "securitysystem",
+              "enum": ["securitysystem"]
             },
             "zones": {
-                "type": "array",
-                "title": "Zones",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "title": "Zone Name"
-                        },
-                        "zone_number": {
-                            "type": "string",
-                            "title": "Zone Number"
-                        },
-                        "zone_type": {
-                            "type": "string",
-                            "enum": [
-                                "contact",
-                                "motion",
-                                "smoke",
-                                "carbonmonoxide"
-                            ],
-                            "title": "Zone Type"
-                        },
-                        "dwell": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "title": "Dwell Time"
-                        }
-                    },
-                    "required": [
-                        "name",
-                        "zone_number",
-                        "zone_type",
-                        "dwell"
-                    ]
-                }
-            },
-            "areas": {
-                "type": "array",
-                "title": "Areas",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "name": {
-                            "type": "string",
-                            "title": "Area Name"
-                        },
-                        "area_number": {
-                            "type": "string",
-                            "title": "Area Number"
-                        },
-                        "area_type": {
-                            "type": "string",
-                            "enum": [
-                                "securitysystem"
-                            ],
-                            "title": "Area Type"
-                        },
-                        "dwell": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "title": "Dwell Time"
-                        },
-                        "zones": {
-                            "type": "array",
-                            "items": {
-                                "type": "integer"
-                            },
-                            "title": "Zones under Area"
-                        }
-                    },
-                    "required": [
-                        "name",
-                        "area_number",
-                        "area_type",
-                        "dwell"
-                    ]
-                }
-            },
-            "debug":{
-                "type":"boolean",
-                "title":"Debug",
-                "default":false
+              "title": "Zones in this Area",
+              "type": "array",
+              "description": "Zone numbers that should show this area as triggered when activated while away-armed.",
+              "items": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 640
+              }
             }
-        },
-        "required": true
+          }
+        }
+      },
+      "debug": {
+        "title": "Debug logging",
+        "type": "boolean",
+        "default": false,
+        "description": "Log every message from the panel without enabling Homebridge-wide debug mode."
+      }
     }
+  },
+  "layout": [
+    "name",
+    {
+      "type": "fieldset",
+      "title": "Connection",
+      "items": ["ip_address", "ip_port", "serial_device", "baud_rate", "udl"]
+    },
+    {
+      "key": "zones",
+      "type": "array",
+      "title": "Zones",
+      "expandable": true,
+      "expanded": false,
+      "orderable": false,
+      "buttonText": "Add zone",
+      "items": [
+        {
+          "type": "flex",
+          "flex-flow": "row wrap",
+          "items": ["zones[].name", "zones[].zone_number", "zones[].zone_type", "zones[].dwell"]
+        }
+      ]
+    },
+    {
+      "key": "areas",
+      "type": "array",
+      "title": "Areas",
+      "expandable": true,
+      "expanded": false,
+      "orderable": false,
+      "buttonText": "Add area",
+      "items": [
+        "areas[].name",
+        "areas[].area_number",
+        {
+          "key": "areas[].zones",
+          "type": "array",
+          "buttonText": "Add zone",
+          "items": ["areas[].zones[]"]
+        }
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced",
+      "expandable": true,
+      "expanded": false,
+      "items": ["debug"]
+    }
+  ]
 }

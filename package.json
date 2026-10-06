@@ -2,7 +2,7 @@
   "displayName": "Homebridge Texecom",
   "name": "homebridge-texecom-full",
   "description": "A plugin for homebridge to integrate Texecom Premier Elite alarm systems into HomeKit",
-  "version": "4.3.0",
+  "version": "5.0.0",
   "author": {
     "name": "Chris Posthumus",
     "email": "chris.posthumus@gmail.com"
@@ -10,7 +10,7 @@
   "homepage": "https://github.com/K1LL3R234/homebridge-texecom",
   "repository": {
     "type": "git",
-    "url": "https://github.com/K1LL3R234/homebridge-texecom.git"
+    "url": "git+https://github.com/K1LL3R234/homebridge-texecom.git"
   },
   "bugs": {
     "url": "https://github.com/K1LL3R234/homebridge-texecom/issues"
@@ -26,33 +26,48 @@
     }
   ],
   "license": "MIT",
-  "preferGlobal": true,
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib/",
+    "config.schema.json",
+    "CHANGELOG.md",
+    "LICENSE",
+    "README.md"
+  ],
   "keywords": [
     "homebridge-plugin",
+    "homekit",
+    "texecom",
+    "premier elite",
+    "alarm",
+    "security system",
     "motion",
-    "smoke",
     "contact",
-    "carbon monoxide",
-    "door",
-    "sensor",
-    "intruder",
-    "Texecom"
+    "smoke",
+    "carbon monoxide"
   ],
   "engines": {
-    "homebridge": ">=2.0.0",
-    "node": ">=18.20.4"
+    "homebridge": "^1.8.0 || ^2.0.0",
+    "node": "^20.18.0 || ^22.10.0 || ^24.0.0"
   },
   "homebridge": {
     "platforms": [
       "Texecom"
     ]
   },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test",
+    "prepublishOnly": "npm run lint && npm test"
+  },
   "dependencies": {
-    "@serialport/parser-readline": "^12.0.0",
-    "crypto-js": "^4.2.0",
-    "debug": "^4.2.0",
-    "serialport": "^12.0.0",
-    "string": ">=3.3.3",
-    "zpad": "^0.5.0"
+    "serialport": "^13.0.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "globals": "^16.0.0",
+    "homebridge": "^1.8.0"
   }
 }
