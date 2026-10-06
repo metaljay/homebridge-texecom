@@ -1,3 +1,5 @@
 node_modules
 package-lock.json
-.vscodenotes/
+.vscode
+notes/
+.DS_Store
