@@ -207,3 +207,27 @@ test('periodic re-reads do not restart a zone dwell timer', async () => {
     teardown(ctx);
   }
 });
+
+test('failed start-up reads cause a reconnect and a clean retry', async () => {
+  const panel = new FakeConnectPanel();
+  // Panel ignores the first two zone-details requests (one full command with 2 attempts).
+  panel.ignoreNext = { [P.COMMAND.GET_ZONE_DETAILS]: 2 };
+  const port = await panel.listen();
+  const api = new EventEmitter();
+  Object.assign(api, {
+    hap, platformAccessory: PlatformAccessory,
+    registerPlatformAccessories() {}, updatePlatformAccessories() {}, unregisterPlatformAccessories() {},
+  });
+  const platform = new TexecomPlatform(silentLog, {
+    protocol: 'connect', ip_address: '127.0.0.1', ip_port: port, udl: '1234', _connectTiming: fast,
+  }, api);
+  api.emit('didFinishLaunching');
+  try {
+    await until(() => platform.areas.size === 1 && platform.zones.size === 5, 5000);
+    const logins = panel.commands.filter((c) => c.cmd === P.COMMAND.LOGIN).length;
+    assert.equal(logins, 2); // reconnected once
+  } finally {
+    platform.shutdown();
+    panel.close();
+  }
+});

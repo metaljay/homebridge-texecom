@@ -109,6 +109,10 @@ class FakeConnectPanel {
     const cmd = body[0];
     const args = body.subarray(1);
     this.commands.push({ cmd, args: [...args] });
+    if (this.ignoreNext && this.ignoreNext[cmd] > 0) {
+      this.ignoreNext[cmd]--; // simulate a panel that doesn't answer
+      return;
+    }
     const reply = (payload) => socket.write(frame(P.TYPE.RESPONSE, sequence, Buffer.concat([Buffer.from([cmd]), payload])));
     const ack = () => reply(Buffer.from([P.ACK]));
     switch (cmd) {
