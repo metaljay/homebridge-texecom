@@ -3,6 +3,17 @@
 [![npm downloads](https://badgen.net/npm/dt/homebridge-texecom-full)](https://www.npmjs.com/package/homebridge-texecom-full)
 [![GitHub last commit](https://badgen.net/github/last-commit/K1LL3R234/homebridge-texecom)](https://github.com/K1LL3R234/homebridge-texecom)
 [![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
+> ## About this fork
+>
+> This is a **review and demonstrator fork** of [homebridge-texecom-full](https://github.com/K1LL3R234/homebridge-texecom), offered to the maintainer to adopt as they see fit. It isn't published to npm.
+>
+> - **What was found and fixed:** [docs/MAINTAINER-REVIEW.md](docs/MAINTAINER-REVIEW.md). The findings were tested on a real Premier Elite panel, including lost keypad disarms causing false alarms in HomeKit, and a ~60 s event blackout after arming from HomeKit.
+> - **New: Texecom Connect support** (`"protocol": "connect"`) for a SmartCom/ComIP left in its normal mode. It reads zones and areas from the panel automatically, reports exact arm modes, and has no delay after arming from HomeKit. See [Choosing a connection](#choosing-a-connection).
+> - **Crestron mode** keeps working as before, with the fixes from the review.
+> - Credits: original plugin by Kieran Jones, maintained by Max Christian and Chris Posthumus. Connect protocol work builds on [texecom-connect](https://github.com/davidMbrooke/texecom-connect) (Apache-2.0) and [texecom2mqtt](https://github.com/dchesterton/texecom2mqtt-hassio) (MIT). See [lib/connect/NOTICE](lib/connect/NOTICE).
+>
+> Arming and disarming over Connect is implemented and tested against a simulated panel, but hasn't yet been verified on real hardware.
+
 # homebridge-texecom-full
 
 A plugin for [Homebridge](https://github.com/homebridge/homebridge) that creates HomeKit motion, contact, smoke, or carbon monoxide sensors for alarm zones from a Texecom Premier intruder alarm via a serial connection or COM-IP module.
