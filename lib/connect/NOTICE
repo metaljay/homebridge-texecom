@@ -27,6 +27,11 @@ numbers beyond texecom2mqtt's (17/18 Entry, 19 Exit, 24 Part Arming) and the
 behaviour of firmware that refuses bulk area-flag reads come from a further
 Apache-2.0 fork: https://github.com/southseaboy/texecom-connect
 
+Handling of NAK replies to reads (the panel refuses commands right after a
+burst of events; taken as data a 0x15 reads as "zone active" or "area in
+alarm") follows real-panel observations published by michaelmarconi/
+texecom_alarm (MIT): https://github.com/michaelmarconi/texecom_alarm
+
 Other behaviour (timings, session drops during alarm reporting, unknown
 area state 6, event type 137) was observed on a real Premier Elite panel
 during testing for this project.

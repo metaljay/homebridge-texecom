@@ -297,3 +297,45 @@ test('an idle re-read during the exit delay keeps "Arming..." (does not flip to 
     teardown(ctx);
   }
 });
+
+test('a NAK to an idle zone/area re-read changes nothing and does not reconnect', async () => {
+  const ctx = await setup({ _connectTiming: { ...fast, keepaliveMs: 80 } });
+  try {
+    const hallway = ctx.platform.zones.get(1).service.getCharacteristic(C.MotionDetected);
+    const current = ctx.area.service.getCharacteristic(Current);
+    const logins = () => ctx.panel.commands.filter((c) => c.cmd === P.COMMAND.LOGIN).length;
+    const before = logins();
+    // 0x15 would decode as "zone 1 active" / "area 1 in alarm" if taken as data
+    ctx.panel.nakNext = { [P.COMMAND.GET_ZONE_STATE]: 2, [P.COMMAND.GET_AREA_FLAGS]: 2 };
+    await wait(600);
+    assert.equal(hallway.value, false);
+    assert.equal(current.value, Current.DISARMED);
+    assert.equal(logins(), before);
+    assert.equal(ctx.platform.connectPanel.client.singleFlagReads, undefined);
+  } finally {
+    teardown(ctx);
+  }
+});
+
+test('single-flag reads reject a NAK that would read as an alarm', async () => {
+  const { ConnectClient, PanelBusyError } = require('../lib/connect/client');
+  const panel = new FakeConnectPanel();
+  panel.bulkFlagsUnsupported = true;
+  const port = await panel.listen();
+  const client = new ConnectClient({ log: silentLog, host: '127.0.0.1', port, udl: '1234', timing: fast });
+  const ready = new Promise((r) => client.once('ready', r));
+  client.start();
+  try {
+    await ready;
+    for (let i = 0; i < 3; i++) {
+      await client.areaStates([1], 24).catch(() => {}); // bulk refused -> single-flag mode
+    }
+    assert.equal(client.singleFlagReads, true);
+    panel.nakNext = { [P.COMMAND.GET_AREA_FLAGS]: 1 }; // NAK on flag 0 (Alarm)
+    // 0x15 taken as data would mean "area 1 in alarm"
+    await assert.rejects(client.areaStates([1], 24), (e) => e instanceof PanelBusyError);
+  } finally {
+    client.stop();
+    panel.close();
+  }
+});

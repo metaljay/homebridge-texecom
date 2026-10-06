@@ -109,6 +109,11 @@ class FakeConnectPanel {
     const cmd = body[0];
     const args = body.subarray(1);
     this.commands.push({ cmd, args: [...args] });
+    if (this.nakNext && this.nakNext[cmd] > 0) {
+      this.nakNext[cmd]--; // busy panel: 1-byte NAK instead of the payload
+      socket.write(frame(P.TYPE.RESPONSE, sequence, Buffer.from([cmd, P.NAK])));
+      return;
+    }
     if (this.ignoreNext && this.ignoreNext[cmd] > 0) {
       this.ignoreNext[cmd]--; // simulate a panel that doesn't answer
       return;
