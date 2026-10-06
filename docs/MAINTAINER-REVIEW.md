@@ -502,9 +502,23 @@ Every fork of the related projects was compared with its parent. Only a few have
 
 **Keypad emulation, revisited:** this plugin's `KEY<digit>` test (6.2, section 2.0b option 1) sent each key with CR LF, as TexecomManager does, and the panel ignored it. garethflowers' published plugin sends keys **without** a line terminator. That is untested on the V6.05.03 panel. `tools/crestron-keypad-probe.py --no-crlf` is ready for a supervised test, since entering a valid code may arm the panel.
 
+### 6.7 Wider GitHub search (October 2026)
+
+A search for Texecom projects on GitHub (about 35 repositories) found two more that matter:
+
+**[michaelmarconi/texecom_alarm](https://github.com/michaelmarconi/texecom_alarm)** (MIT, started August 2026, about 20k lines including extensive tests): a Connect → MQTT → Home Assistant add-on built from independent real-panel observation (Elite 88, V6.02.02). Its "spike" reports corroborate several findings here and add some new ones:
+- **State reads and keep-alives can be refused with a 1-byte NAK** right after a burst of unsolicited events. Taken as data, `0x15` reads as "zone 1 active and alarmed", or as "area in alarm" on a single-flag read. **Fixed in this branch:** NAK replies are now transient, with no state change and no reconnect. Their own first fix over-corrected into a reconnect storm.
+- Area event states **6 and 7 look like "settled in Part Arm 1/2"**. 6 is exactly what the test panel sent after "Part Armed 1".
+- **On a SmartCom shared with the Texecom app or monitoring, the panel drops the link at alarm time** with Hayes `ATH0`/`ATZ`; a dedicated ComIP stays connected. That explains texecom2mqtt's "corrupt response 0x41" (the `A` of `ATH0`). Disarming during an alarm through a shared SmartCom can fail.
+- An idle connection hangs after ~60 s without a keep-alive (confirmed).
+
+**[shuckc/pytexalarm](https://github.com/shuckc/pytexalarm)** (MIT, maintained, built **without** the NDA): speaks the **UDL/Wintex** protocol, which is what the Crestron port switches to after `\W<udl>/`. It can read and decode the panel's whole configuration (zones, types, areas, users) and impersonate a panel for Wintex. **Opportunity:** a Crestron-mode plugin could read zone names, types and area membership over UDL at start-up (costing one ~30 s event blackout), the same automatic discovery the Connect mode has. Note that its full config dump includes user codes, so a plugin should read only the zone and area ranges. Its README also warns that a SmartCom in *monitor mode* blocks UDL from the local network.
+
+Others checked, with nothing to adopt: openHAB bridge (Crestron), ESP32/ESPHome components (UDL polling; one is for Premier International panels), a Go port of texecom2mqtt (no licence), ARC/SIA receivers, and older Home Assistant integrations.
+
 ### Credits
 
-Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect).
+Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect), Michael Marconi (texecom_alarm), Chris Shucksmith (pytexalarm).
 
 ---
 
