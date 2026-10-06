@@ -140,6 +140,19 @@ The alarm reached HomeKit **65 seconds late**, and every motion sensor was froze
 3. **Two modules:** send commands through a second module (for example a SmartCom using the Connect protocol) and keep the Crestron port for live events. Only suits installs that have both.
 4. In all cases, **avoid unnecessary logins.** The beta's clock sync logs in on a schedule, and each sync costs a 60 s blackout. `LSTATUS` already shows the panel time without logging in (6.2), which allows a drift check that only logs in when a correction is actually needed.
 
+**Verified in the plugin on real hardware** ([`tools/hotfix-4.4.0-beta.1-v2.py`](../tools/hotfix-4.4.0-beta.1-v2.py) applied to your 4.4.0-beta.1: logout after each command plus the frame filter). Night then Off from the Home app, with sensors moving throughout and texecom2mqtt as the reference:
+
+| | Night (arm) | Off (disarm) |
+|---|---|---|
+| Home app pressed | 19:37:57 | 19:39:04 |
+| Panel state (Connect) | In Exit 19:38:05, Part Armed 1 19:38:15 | Disarmed 19:39:11 |
+| Logout sent | 19:38:05 | 19:39:12 |
+| Crestron feed resumes | **19:38:36** (+31 s) | **19:39:43** (+31 s) |
+| Held messages | `"X0010`, `"A00129` + 4 zone changes, all processed | `"D0010` + 4 zone changes, all processed |
+| HomeKit result | Night (via the HomeKit request, user 29) | Disarmed |
+
+HomeKit is blind for **~39 s per command**, down from ~68 s, and nothing is lost. The ACK never reached the parser. The login took **6 s** to be acknowledged this time (3 s earlier in the day), so a command timeout of **~8 s** is safer than 5 s.
+
 Also visible in the burst: the panel reports arms made through the Crestron interface as **user 29**, and remote disarms as **user 0**. Your `app_users` / `remote_users` settings exist for this, but the defaults (25/254) don't match this panel.
 
 ### 2.1 IP connection: messages lost when TCP packets contain more than one line (*Reproduced*)
