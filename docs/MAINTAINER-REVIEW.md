@@ -85,6 +85,30 @@ The whole session, with the original TCP chunking, is in [`test/fixtures/real-se
 
 They're listed most severe first. Line numbers refer to `index.js` on `4.4.0-beta.0` at `674be7c`.
 
+### 2.0b After arming or disarming from HomeKit, the panel holds back all events for about 60 seconds (*Confirmed on real hardware*)
+
+Found by running texecom2mqtt (Connect protocol, via a SmartCom) alongside the plugin (Crestron, via the COM-IP) on the same panel, so every event could be checked against an independent feed.
+
+The plugin logs in with `\W<udl>/` before each command and never logs out. While that UDL session is open, **the panel sends nothing on the Crestron port**: no zone changes, no arm or disarm events, no alarms. When the session times out, about 60 seconds after the last command, everything held back arrives in one burst.
+
+From the test on 6 Oct (UK time). Arms and disarms were made from the Home app; the kitchen is a Guard zone included in Part Arm 1:
+
+| Time | HomeKit command | Connect feed (live) | Crestron feed (plugin) |
+|---|---|---|---|
+| 17:53:33 | Night → panel Part Arm 1 | In Exit, then Part Armed 1 | `OK`, `OK`, then **silence** |
+| 17:54:13 | Off | Disarmed | `OK`, `OK` |
+| 17:54:42 | Home → panel Part Arm 1 | In Exit, then Part Armed 1 | `OK`, `OK` |
+| 17:55:05 | | **Kitchen in alarm, bell active** | (nothing) |
+| 17:55:08 | Off | Disarmed | `OK`, `OK` |
+| 17:53:33–17:56:08 | | 12 zone changes | **0 zone changes** |
+| 17:56:08–17:56:17 | | | burst: `"X0010`, `"A00129`, `"D0010`, `"X0010`, `"A00129`, **`"L0010`**, `"D0010` and the held zone messages |
+
+The alarm reached HomeKit **65 seconds late**, and every motion sensor was frozen for 2½ minutes. The same pattern explains an earlier unexplained burst at 15:24:20, which arrived 59 seconds after a test arm/disarm. The beta's clock sync also logs in, so each sync would cause the same 60-second blackout.
+
+**Suggested fix:** send `\H/` (log out) after every command sequence, as [TexecomManager](https://github.com/JumpMaster/TexecomManager) does after each Simple Protocol task. Whether `\H/` releases events immediately on this panel is being checked with [`tools/crestron-logout-probe.py`](../tools/crestron-logout-probe.py), which logs in and out without arming anything.
+
+Also visible in the burst: the panel reports arms made through the Crestron interface as **user 29**, and remote disarms as **user 0**. Your `app_users` / `remote_users` settings exist for this, but the defaults (25/254) don't match this panel.
+
 ### 2.1 IP connection: messages lost when TCP packets contain more than one line (*Reproduced*)
 
 **Where:** `setupConnection()`, lines 349–354. Each TCP `data` chunk goes straight to `processData()`, which trims it and parses only the start.
@@ -381,6 +405,17 @@ A periodic `ASTATUS` (confirmed to work, 6.2) would give this plugin the same ap
 The Connect protocol reports things Crestron can't: **which** part-arm (1/2/3) was used, explicit "in exit" and "in entry" states (HomeKit's "Arming…"), zone names and area membership straight from the panel, fault, masked and bypassed flags, power supply readings, and the full event log. It needs a Premier Elite on v4+ firmware with a ComIP, ComWifi or SmartCom, and like Crestron it takes over that connection (only one app per module).
 
 Crestron remains the simpler option and works over serial and on older panels. A reasonable direction is to keep this plugin on Crestron, adopt the fixes in section 2 and the state queries in 6.2, and point users who want richer data at a Connect-based plugin.
+
+### 6.5 Side by side on the same panel
+
+On 6 Oct texecom2mqtt (Connect, via the SmartCom) and the plugin (Crestron, via the COM-IP) ran together on the test panel, a Premier Elite 24 on firmware V6.05.03 with one area in use and five zones: Hallway as Entry/Exit 1, the rest Guard. Findings:
+
+- **Zones:** identical on both feeds, normally within the same second, except during the post-login blackout in 2.0b.
+- **Message mapping:** `"U` = User Code; `"X` = In Exit / Exit Started; `"A` = Armed ("Open/Close (Away Armed)"); `"L` = In Alarm + Bell Active; `"E` = In Entry; `"D` = Disarmed ("Open After Alarm (Alarm Abort)" after an alarm).
+- **What Crestron can't tell you:** which zone caused an alarm (Connect: "last active zone: Kitchen"), which part arm was used (Connect: "Remote Part Arm 1"), and engineer activity (Wintex sessions show as Installer Programming and Download start/end; Crestron only shows `"U0000`, user 0).
+- **HomeKit Night and Home both arm Part Arm 1.** The Crestron `Y` command can't reach Part Arm 2 or 3.
+- **Connect isn't more reliable.** After each alarm and disarm, texecom2mqtt's commands timed out for 1–2 minutes. It reconnected repeatedly, twice reporting a corrupt response starting `0x41` (`A`), and missed a whole keypad arm and disarm. Crestron kept reporting throughout, apart from the blackout in 2.0b. One possible cause is the SmartCom being busy sending the alarm to the Texecom cloud/app. That is unconfirmed.
+- Connect also reported an undocumented area state `6` straight after "Part Armed 1".
 
 ### Credits
 
