@@ -105,7 +105,24 @@ From the test on 6 Oct (UK time). Arms and disarms were made from the Home app; 
 
 The alarm reached HomeKit **65 seconds late**, and every motion sensor was frozen for 2½ minutes. The same pattern explains an earlier unexplained burst at 15:24:20, which arrived 59 seconds after a test arm/disarm. The beta's clock sync also logs in, so each sync would cause the same 60-second blackout.
 
-**Suggested fix:** send `\H/` (log out) after every command sequence, as [TexecomManager](https://github.com/JumpMaster/TexecomManager) does after each Simple Protocol task. Whether `\H/` releases events immediately on this panel is being checked with [`tools/crestron-logout-probe.py`](../tools/crestron-logout-probe.py), which logs in and out without arming anything.
+**Isolated with [`tools/crestron-logout-probe.py`](../tools/crestron-logout-probe.py)**, which logs in and tries to log out without arming anything, with texecom2mqtt as an independent feed:
+
+| Time | Probe | Crestron feed | Connect feed |
+|---|---|---|---|
+| 18:02:51–18:03:02 | not logged in | 8 zone changes, live | same |
+| 18:03:03 | `\W<udl>/` | **no reply; feed goes silent** | zone changes continue |
+| 18:03:26 | `\H/` (TexecomManager's log-out) | **`ERROR`; still silent** | zone changes continue |
+| 18:04:27 | | **burst of everything held**, 61 s after the last command | |
+
+- **Any command over the Crestron port starts a ~60 s blackout, and each further command restarts it.** Even the rejected `\H/` did.
+- **`\H/` doesn't end the session on this panel** (firmware V6.05.03), so TexecomManager's log-out doesn't apply here.
+- **Events are delayed, not lost.** The burst contained everything, in order. With line framing fixed (2.1), the final state is right but up to a minute late.
+
+**Options:**
+1. **Arm and disarm with Crestron keypad emulation instead of the UDL.** TexecomManager sends virtual keypresses (`KEY…`) with a user code and reads the screen with `LSTATUS`, so no UDL session is opened. This is the clean fix for single-module installs, but it's more involved and depends on the keypad menus.
+2. **Mitigate:** after any command, mark zone states as possibly stale for 60 s. When the burst arrives, process it in order (2.1) and confirm the result with `ASTATUS` (6.2). Whether `ASTATUS` answers during the blackout hasn't been tested yet.
+3. **Two modules:** send commands through a second module (for example a SmartCom using the Connect protocol) and keep the Crestron port for live events. Only suits installs that have both.
+4. In all cases, **avoid unnecessary logins.** The beta's clock sync logs in on a schedule, and each sync costs a 60 s blackout. `LSTATUS` already shows the panel time without logging in (6.2), which allows a drift check that only logs in when a correction is actually needed.
 
 Also visible in the burst: the panel reports arms made through the Crestron interface as **user 29**, and remote disarms as **user 0**. Your `app_users` / `remote_users` settings exist for this, but the defaults (25/254) don't match this panel.
 
