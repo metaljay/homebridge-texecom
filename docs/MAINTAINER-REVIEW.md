@@ -20,7 +20,7 @@ This is a review of `homebridge-texecom-full` against current Homebridge plugin 
 
 Everything marked *Reproduced* was run against your beta branch using real Homebridge (1.11.4) and a fake COM-IP panel. The panel is included as [`tools/fake-panel.js`](../tools/fake-panel.js), so you can repeat the tests.
 
-Items marked **Confirmed on real hardware** were observed on a user's live installation: your published `4.4.0-beta.1`, Homebridge 2.4.0, Node 24, Docker on a Raspberry Pi, and a COM-IP on port 23. The plugin's own `debug` log was the only instrumentation; no packet capture was used.
+Items marked **Confirmed on real hardware** were observed on a user's live installation: your published `4.4.0-beta.1`, Homebridge 2.4.0, Node 24, Docker on a Raspberry Pi, and a Premier Elite 24 (firmware V6.05.03). The panel's **Com Port 3 is set to "Crestron System"** and is bridged to the network by a **Wemos D1 (ESP8266) running esp-link** (TCP port 23), not an official Texecom ComIP. Com Port 1 is a SmartCom. esp-link forwards serial bytes in whatever chunks it buffers, so the multi-message chunks below may be more frequent than with a ComIP. TCP never guarantees message boundaries, though, so the line-framing fix (2.1) applies to any IP connection. The plugin's own `debug` log was the only instrumentation; no packet capture was used.
 
 ---
 
@@ -152,6 +152,8 @@ The alarm reached HomeKit **65 seconds late**, and every motion sensor was froze
 | HomeKit result | Night (via the HomeKit request, user 29) | Disarmed |
 
 HomeKit is blind for **~39 s per command**, down from ~68 s, and nothing is lost. The ACK never reached the parser. The login took **6 s** to be acknowledged this time (3 s earlier in the day), so a command timeout of **~8 s** is safer than 5 s.
+
+**The ~30 s after logout is a fixed panel timer; polling doesn't shorten it** ([`tools/crestron-post-logout-poll.py`](../tools/crestron-post-logout-poll.py)). After the logout ACK, `ASTATUS` was sent every 2 s. All 15 replies were the binary `03 0F ED` until **31 s after the logout**, when the held events and then a normal `"NN` came back. The panel's Wintex settings show no UDL or remote-session timer to adjust (only "Remote Arm Instant", option 58, which is why remote arms set after the 8 s exit settle time instead of the area's 15 s exit delay). Polling does give a precise **"back online" signal**: the first text reply. After a command, the plugin could poll quietly and confirm the true state with `ASTATUS` at that moment. Removing the blind spot entirely needs a command path that doesn't open a UDL session: keypad emulation (option 1 above) or a second module (option 3).
 
 Also visible in the burst: the panel reports arms made through the Crestron interface as **user 29**, and remote disarms as **user 0**. Your `app_users` / `remote_users` settings exist for this, but the defaults (25/254) don't match this panel.
 
