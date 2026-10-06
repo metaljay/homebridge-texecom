@@ -80,3 +80,28 @@ test('real session: walking in during the entry delay is not an alarm, even with
   const { timeline } = replay({ trigger_from_zones: true });
   assert.deepEqual(timeline, ['away', 'disarmed', 'away', 'disarmed', 'away', 'triggered', 'disarmed']);
 });
+
+test('ASTATUS on connect corrects a stale cached state', () => {
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, config, api);
+  api.emit('didFinishLaunching');
+  const area = platform.areas.get(1);
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+  platform.handleLine('"YN'); // panel: area 1 armed, area 2 not
+  assert.equal(area.service.getCharacteristic(Current).value, Current.AWAY_ARM); // default_arm_state away
+  platform.handleLine('"NN');
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+});
+
+test('exit delay ("X") shows Arming... in HomeKit until the panel reports armed', () => {
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, config, api);
+  api.emit('didFinishLaunching');
+  const area = platform.areas.get(1);
+  const Target = hap.Characteristic.SecuritySystemTargetState;
+  platform.handleLine('"X0010');
+  assert.equal(area.service.getCharacteristic(Target).value, Target.AWAY_ARM);
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+  platform.handleLine('"A0013');
+  assert.equal(area.service.getCharacteristic(Current).value, Current.AWAY_ARM);
+});

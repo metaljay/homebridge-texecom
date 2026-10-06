@@ -49,3 +49,22 @@ test('commands encode each bitmask as a single byte', () => {
   assert.deepEqual([...encodeCommand('W1234')], [...Buffer.from('\\W1234/')]);
   assert.deepEqual([...encodeCommand(`A${areaBitmask(8)}`)], [0x5c, 0x41, 0x80, 0x2f]);
 });
+
+test('parses the ASTATUS reply (one letter per area)', () => {
+  const { parseLine: parse } = require('../lib/protocol');
+  assert.deepEqual(parse('"NN'), { type: 'astatus', armed: [false, false] });
+  assert.deepEqual(parse('"YN\r'), { type: 'astatus', armed: [true, false] });
+});
+
+test('strips Wintex binary frames (e.g. the logout ACK) before line splitting', () => {
+  const { stripWintexFrames, LineSplitter: Splitter } = require('../lib/protocol');
+  const L = (bytes) => Buffer.from(bytes).toString('latin1');
+  assert.equal(stripWintexFrames(L([3, 6, 0xf6]) + '"Z0011'), '"Z0011');
+  assert.equal(stripWintexFrames(L([3, 0x0f, 0xed]) + L([3, 6, 0xf6]) + 'OK'), 'OK');
+  assert.equal(stripWintexFrames(L([3, 6])), L([3, 6])); // incomplete: wait for more
+  const lines = [];
+  const splitter = new Splitter((l) => lines.push(l));
+  splitter.push(Buffer.from([3, 6]));
+  splitter.push(Buffer.concat([Buffer.from([0xf6]), Buffer.from('"Z0011\r\n')]));
+  assert.deepEqual(lines, ['"Z0011']);
+});

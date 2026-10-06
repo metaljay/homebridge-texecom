@@ -92,3 +92,21 @@ test('rejects when not connected', async () => {
   const conn = new TexecomConnection({ log: silentLog, host: '127.0.0.1', port: 1 });
   await assert.rejects(conn.sendCommands(['W1234']), /Not connected/);
 });
+
+test('logs out (Wintex 03 48 B4) after a UDL transaction and holds queries during the blackout', async () => {
+  const raw = [];
+  const panel = await startPanel((_cmd, socket) => socket.write('OK\r\n'));
+  const conn = await connect(panel.port);
+  // capture raw bytes the plugin writes
+  const origWrite = conn.transport.write.bind(conn.transport);
+  conn.transport.write = (data, cb) => {
+    raw.push(Buffer.from(data));
+    return origWrite(data, cb);
+  };
+  await conn.sendCommands(['W1234', 'A\x01']);
+  assert.ok(raw.some((b) => b.equals(Buffer.from([0x03, 0x48, 0xb4]))), 'logout sent');
+  assert.equal(conn.inBlackout, true);
+  assert.equal(conn.sendQuery('ASTATUS'), false); // would only get a binary reply now
+  conn.stop();
+  panel.close();
+});

@@ -355,9 +355,12 @@ lib/settings.js          PLUGIN_NAME / PLATFORM_NAME / defaults
 lib/platform.js          Dynamic platform: cache restore, config validation, accessory
                          reconciliation, routing panel messages to accessories, shutdown
 lib/connection.js        TCP or serial transport, line framing, reconnect with back-off,
-                         TCP keep-alive, serialised command queue (sendCommands)
-lib/protocol.js          Pure functions: parseLine(), LineSplitter, areaBitmask(),
+                         TCP keep-alive, serialised command queue (sendCommands), Wintex
+                         logout after UDL commands, ASTATUS query on connect
+lib/protocol.js          Pure functions: parseLine() (incl. U/X/E and the ASTATUS reply),
+                         LineSplitter (drops Wintex binary frames), areaBitmask(),
                          encodeCommand(). No I/O, so fully unit-testable
+lib/connect/, lib/connectPanel.js   Texecom Connect transport (section 7)
 lib/zoneAccessory.js     One zone → one HomeKit sensor, dwell timer, tamper
 lib/areaAccessory.js     One area → HomeKit SecuritySystem, onSet → panel commands,
                          state persisted in accessory.context
