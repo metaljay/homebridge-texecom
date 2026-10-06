@@ -21,6 +21,8 @@ This document lists:
 
 Everything marked *Reproduced* was run against your beta branch using real Homebridge (1.11.4) and a fake COM-IP panel. The panel is included as [`tools/fake-panel.js`](../tools/fake-panel.js), so you can repeat the tests.
 
+Items marked **Confirmed on real hardware** were observed on Jordan's live installation: your published `4.4.0-beta.1`, Homebridge 2.4.0, Node 24, Docker on a Raspberry Pi, and a COM-IP at `192.168.2.10:23`. The plugin's own `debug` log was the only instrumentation; no packet capture was used.
+
 ---
 
 ## 1. Already fixed in your beta (nothing to do)
@@ -63,6 +65,16 @@ Serial users aren't affected, because the serial path already goes through `Read
 
 **Reproduction:** the fake panel sent `"Z0071\r\n"Z0151\r\n` in a single write. On your beta, *Living Room* went active but *Front Door* stayed closed. On v5, both updated.
 
+**Confirmed on real hardware (6 Oct 2026).** In about a minute of walking past sensors, **3 of 23 TCP chunks from the COM-IP carried more than one message**. Every message after the first in each chunk was dropped, which lost 5 zone events:
+
+| Chunk (from `IP data received:` debug lines) | Processed | Lost |
+|---|---|---|
+| `"X0010` `"Z0051` `"Z0011` `"Z0050` | `"X0010` (logged as unknown) | Landing active, Hallway active, Landing clear |
+| `"Z0011` `"Z0031` | Hallway active | Kitchen active |
+| `"U0030` `"Z0010` | `"U0030` (logged as unknown) | Hallway clear, so Hallway showed motion until its next event |
+
+This is the most user-visible issue in the list: motion automations and alerts silently miss events on IP installs.
+
 **Suggested patch:** run the socket through the same `ReadlineParser` the serial path uses, but keep the raw stream for the clock reader. `serialport` v12 already exports `ReadlineParser`, so `@serialport/parser-readline` can be dropped as well.
 
 ```js
@@ -88,6 +100,16 @@ lines.on('data', (line) => {
 **Where:** `areaTargetSecurityStateSet()` (line 842) and `_syncPanelClock()` (line 466). Both call `writeCommandAndWaitForOK` independently, and every waiting call accepts the first `OK` from anyone.
 
 **Why it matters:** if HomeKit arms two areas at once (a scene, or a combined area plus one of its members), or the clock sync runs while someone arms, the panel receives `W…, W…, A…, A…`. The first `OK` resolves *both* waiting promises, so each command's result can be credited to the other. If one command fails, the other can still be reported as successful.
+
+**Confirmed on real hardware: the panel is slower than the 2-second timeout.** Arming area 1 from HomeKit on a real COM-IP gave:
+
+```
+15:23:07  Sending command 1 to area 001      (W<udl> written)
+15:23:10  IP data received: OK               3 s after the login was written
+15:23:12  IP data received: OK               reply to the arm command
+```
+
+The login's 2-second timer had already expired and resent it before the first `OK` arrived. So every arm on this installation probably sends a duplicate login, and an `OK` can arrive while a *different* command is waiting. "Probably" because the beta doesn't log retries, so this is inferred from the timing. That makes the mis-matching described above a realistic risk rather than a theoretical one. Suggest raising the timeout to around 5 s, and logging retries at debug level.
 
 **Reproduction:** two areas were armed in one HomeKit write. Your beta sent `W0123, W0123, A\x01, A\x20`. v5 sent `W0123, A\x01, W0123, A\x20`. Your beta only succeeded because the fake panel acknowledges everything.
 
