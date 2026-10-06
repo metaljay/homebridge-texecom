@@ -122,7 +122,21 @@ The alarm reached HomeKit **65 seconds late**, and every motion sensor was froze
 1. **Arm and disarm with Crestron keypad emulation instead of the UDL.** TexecomManager sends virtual keypresses (`KEY…`) with a user code and reads the screen with `LSTATUS`, so no UDL session is opened. This is the clean fix for single-module installs, but it's more involved and depends on the keypad menus.
 2. **Mitigate:** after any command, mark zone states as possibly stale for 60 s, and when the burst arrives, process it in order (2.1). `ASTATUS` **can't** be used to confirm the result during the blackout (see below).
 
-**Why it happens** ([`tools/crestron-astatus-during-login.py`](../tools/crestron-astatus-during-login.py)). After `\W<udl>/`, the port stops speaking text. `ASTATUS` and `LSTATUS` sent during the blackout were each answered with the binary frame `03 0F ED`. That is **Wintex framing** as documented in [pialarm's wintex-protocol.md](https://github.com/shuckc/pialarm/blob/master/protocol/wintex-protocol.md): a length byte, then a type, then the checksum `0xFF - sum` (`FF - 03 - 0F = ED`). So the UDL login switches the port into a Wintex/UDL session, and the 60 s is that session's idle timeout. Text queries don't extend it: the burst came 60.7 s after the login and 35 s after the last `ASTATUS`. Framed `\…/` commands do extend it, as the rejected `\H/` showed. The Wintex logout is message type `H`, which as a frame is `03 48 B4`. Whether that ends the session (and so the blackout) immediately is being tested with [`tools/crestron-binary-logout-probe.py`](../tools/crestron-binary-logout-probe.py).
+**Why it happens** ([`tools/crestron-astatus-during-login.py`](../tools/crestron-astatus-during-login.py)). After `\W<udl>/`, the port stops speaking text. `ASTATUS` and `LSTATUS` sent during the blackout were each answered with the binary frame `03 0F ED`. That is **Wintex framing** as documented in [pialarm's wintex-protocol.md](https://github.com/shuckc/pialarm/blob/master/protocol/wintex-protocol.md): a length byte, then a type, then the checksum `0xFF - sum` (`FF - 03 - 0F = ED`). So the UDL login switches the port into a Wintex/UDL session, and the 60 s is that session's idle timeout. Text queries don't extend it: the burst came 60.7 s after the login and 35 s after the last `ASTATUS`. Framed `\…/` commands do extend it, as the rejected `\H/` showed. The Wintex logout is message type `H`, which as a frame is `03 48 B4`.
+
+**Binary logout: confirmed it halves the blackout** ([`tools/crestron-binary-logout-probe.py`](../tools/crestron-binary-logout-probe.py), two runs, no Wintex session open, sensors moving throughout):
+
+| | Run 1 | Run 2 |
+|---|---|---|
+| Logout `03 48 B4` sent | 10 s after login | 2 s after login |
+| Panel reply | `03 06 F6` (Wintex ACK) | `03 06 F6` |
+| Text feed resumed (held events replayed in order) | **30.7 s** after logout | **30.9 s** after logout |
+
+**Rule:** without a logout, the feed is silent until about 60 s after the last framed command. With the binary logout, it's silent until about 30 s after the logout. Nothing is lost either way.
+
+**Recommended:** send `03 48 B4` straight after each command sequence (arm/disarm, and clock sync). That cuts the blackout from ~60 s to ~30 s for one byte-triple. Two things to handle:
+- The ACK `03 06 F6` arrives on the same stream **without a line terminator**, so it gets glued to the front of the next text line (for example `\x03\x06\xf6"Z0011`). The line parser must drop a valid Wintex frame (`[len][type]…[checksum]`, where `sum & 0xFF == 0xFF`) before parsing text, or the next zone event is lost.
+- Don't treat "no `OK` to `\W<udl>/`" as failure on its own. In the probes the login was never acknowledged with text `OK`, yet the session clearly opened (the binary replies and the blackout prove it). The plugin's arm commands did get `OK`s, so it's worth checking which command those `OK`s actually answer.
 3. **Two modules:** send commands through a second module (for example a SmartCom using the Connect protocol) and keep the Crestron port for live events. Only suits installs that have both.
 4. In all cases, **avoid unnecessary logins.** The beta's clock sync logs in on a schedule, and each sync costs a 60 s blackout. `LSTATUS` already shows the panel time without logging in (6.2), which allows a drift check that only logs in when a correction is actually needed.
 
@@ -435,6 +449,8 @@ On 6 Oct texecom2mqtt (Connect, via the SmartCom) and the plugin (Crestron, via 
 - **HomeKit Night and Home both arm Part Arm 1.** The Crestron `Y` command can't reach Part Arm 2 or 3.
 - **Connect isn't more reliable.** After each alarm and disarm, texecom2mqtt's commands timed out for 1–2 minutes. It reconnected repeatedly, twice reporting a corrupt response starting `0x41` (`A`), and missed a whole keypad arm and disarm. Crestron kept reporting throughout, apart from the blackout in 2.0b. One possible cause is the SmartCom being busy sending the alarm to the Texecom cloud/app. That is unconfirmed.
 - Connect also reported an undocumented area state `6` straight after "Part Armed 1".
+- **User numbers:** the panel's own event log (5 years of history read from Wintex) only contains users 0 (engineer), 1, 3 and 4. So `"A00129` ("user 29") is a pseudo-user for arms made through the UDL/Crestron interface, not a real user slot. Remote arms and disarms are logged as user 0. These values aren't standard across panels, which supports keeping `app_users` / `remote_users` configurable.
+- **Wintex's saved event log** (`Customers/<name>.tlf`, under the Windows VirtualStore) is easy to read: 9-byte records of `[type][group][parameter][areas LE16][Unix time LE32]`, with types matching the Connect protocol's log event numbers. Event type **137** (parameters 100 and 102, group 9) appears during engineer programming and isn't in texecom2mqtt's list.
 
 ### Credits
 

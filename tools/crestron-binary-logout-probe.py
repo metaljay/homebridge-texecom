@@ -5,7 +5,7 @@ After a \\W<udl>/ login the port answers in Wintex binary framing
 the Crestron text feed stops for ~60 s. This tries ending the session with
 the Wintex logout message 'H' (03 48 B4). Nothing is armed or disarmed.
 
-  python3 crestron-binary-logout-probe.py <panel-ip> <port> [homebridge-container] --udl-from <config.json>
+  python3 crestron-binary-logout-probe.py <panel-ip> <port> [homebridge-container] --udl-from <config.json> [--logout-after <seconds>]
 
 The UDL code is read from a Homebridge config.json (Texecom platform "udl"),
 or asked for at a hidden prompt if --udl-from is not given. It is only sent
@@ -14,8 +14,8 @@ stopped while the probe runs and always started again afterwards.
 
 Timeline (keep moving past sensors throughout):
   t=0     listen 8 s (not logged in, events should be live)
-  t=8     \\W<udl>/ login, listen 10 s (expect silence)
-  t=18    Wintex logout 03 48 B4
+  t=8     \\W<udl>/ login, listen 10 s (or --logout-after) (expect silence)
+  then    Wintex logout 03 48 B4
   then    listen 75 s: events within a few seconds means the logout works;
           a burst ~60 s after the login means it doesn't.
 """
@@ -62,6 +62,11 @@ def main():
     global T0
     args = sys.argv[1:]
     udl_from = None
+    logout_after = 10.0
+    if "--logout-after" in args:
+        i = args.index("--logout-after")
+        logout_after = float(args[i + 1])
+        del args[i:i + 2]
     if "--udl-from" in args:
         i = args.index("--udl-from")
         udl_from = args[i + 1]
@@ -91,8 +96,9 @@ def main():
             print("  not logged in - events should be live")
             listen(sock, 8)
             send(sock, b"\\W" + udl.encode() + b"/", "login")
-            listen(sock, 10)
+            listen(sock, logout_after)
             send(sock, logout, "Wintex logout 03 48 B4")
+            print("  ... listening 75 s; note when events start arriving again")
             listen(sock, 75)
     finally:
         if container:
