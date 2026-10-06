@@ -1,7 +1,7 @@
 # Review notes for the maintainer
 
 **For:** Chris Posthumus (maintainer of `homebridge-texecom-full`)
-**From:** Jordan Fern ([metaljay/homebridge-texecom](https://github.com/metaljay/homebridge-texecom)), prepared with Claude Code
+**From:** [metaljay/homebridge-texecom](https://github.com/metaljay/homebridge-texecom), prepared with Claude Code
 **Date:** 6 October 2026
 **Compared against:** your `4.4.0-beta.0` branch at `674be7c` (*Add panel clock sync*, 4.4.0-beta.1 in the changelog)
 
@@ -21,7 +21,7 @@ This document lists:
 
 Everything marked *Reproduced* was run against your beta branch using real Homebridge (1.11.4) and a fake COM-IP panel. The panel is included as [`tools/fake-panel.js`](../tools/fake-panel.js), so you can repeat the tests.
 
-Items marked **Confirmed on real hardware** were observed on Jordan's live installation: your published `4.4.0-beta.1`, Homebridge 2.4.0, Node 24, Docker on a Raspberry Pi, and a COM-IP at `192.168.2.10:23`. The plugin's own `debug` log was the only instrumentation; no packet capture was used.
+Items marked **Confirmed on real hardware** were observed on a user's live installation: your published `4.4.0-beta.1`, Homebridge 2.4.0, Node 24, Docker on a Raspberry Pi, and a COM-IP on port 23. The plugin's own `debug` log was the only instrumentation; no packet capture was used.
 
 ---
 
@@ -52,7 +52,7 @@ Items marked **Confirmed on real hardware** were observed on Jordan's live insta
 
 ### 2.0 Real-world impact: lost keypad disarms cause false alarms in HomeKit (*Confirmed on real hardware*)
 
-This is the most serious finding, and it combines 2.1 with the zone-trigger behaviour described below. Jordan ran three keypad tests on `4.4.0-beta.1`: arm then disarm; arm, walk in, disarm during the entry delay; arm, walk in and let the alarm sound, then disarm. Afterwards he reported that **"the HomeKit notifications throughout that exercise were well off"**. The debug log shows why:
+This is the most serious finding, and it combines 2.1 with the zone-trigger behaviour described below. The tester ran three keypad tests on `4.4.0-beta.1`: arm then disarm; arm, walk in, disarm during the entry delay; arm, walk in and let the alarm sound, then disarm. Afterwards they reported that **"the HomeKit notifications throughout that exercise were well off"**. The debug log shows why:
 
 - The panel sends "user entered code" and "disarmed" a fraction of a second apart, so they often arrive in **one** TCP chunk: `"U0030\r\n"D0013\r\n`. Because of 2.1, the beta processed the `U` and **dropped the disarm, twice out of three times**.
 - `areas_armed` therefore still contained area 1. For the rest of the session, every hallway or kitchen movement produced `Area 001 manual triggered`: **six false "alarm triggered" states in two minutes** while the panel was disarmed.
@@ -69,9 +69,9 @@ The whole session, with the original TCP chunking, is in [`test/fixtures/real-se
 
 `test/real-session.test.js` runs the same replay through v5 as an automated test.
 
-**Zone-inferred alarms misfire on every normal homecoming, even with 2.1 fixed.** When an away-armed area has a zone go active, the beta marks the area as triggered (`manual triggered`). But walking in through the entry route *is* a zone going active while armed. The panel sends `"E0010` (entry delay), you disarm, and nothing is wrong. At 15:32:22 the beta would have raised a false alarm here if that zone message hadn't been lost in the same chunk as the `E`. The panel reports real alarms itself, and gets them right. In the third test Jordan came in through the hallway, which is on the entry route, so the panel sent `"E0010` (entry delay). He then walked into the kitchen, which isn't, so the panel sent `"L0010` (full alarm) at 15:33:02 and reported the kitchen zone a second later. Only the panel knows which zones are entry routes and which are immediate. The plugin can't, so any inference from zone activity will be wrong one way or the other. **Suggestion:** rely on `L`, and make zone inference opt-in for panels that don't send `L`. If it is kept, it should ignore activity between `E` and the following `D`/`L`. v5 does both (`trigger_from_zones`, default off). The trade-off of that guard: on a panel that *doesn't* send `L`, walking from an entry-route zone into an immediate zone during the entry delay wouldn't be shown. That's one more reason to rely on `L` wherever the panel provides it.
+**Zone-inferred alarms misfire on every normal homecoming, even with 2.1 fixed.** When an away-armed area has a zone go active, the beta marks the area as triggered (`manual triggered`). But walking in through the entry route *is* a zone going active while armed. The panel sends `"E0010` (entry delay), you disarm, and nothing is wrong. At 15:32:22 the beta would have raised a false alarm here if that zone message hadn't been lost in the same chunk as the `E`. The panel reports real alarms itself, and gets them right. In the third test the tester came in through the hallway, which is on the entry route, so the panel sent `"E0010` (entry delay). He then walked into the kitchen, which isn't, so the panel sent `"L0010` (full alarm) at 15:33:02 and reported the kitchen zone a second later. Only the panel knows which zones are entry routes and which are immediate. The plugin can't, so any inference from zone activity will be wrong one way or the other. **Suggestion:** rely on `L`, and make zone inference opt-in for panels that don't send `L`. If it is kept, it should ignore activity between `E` and the following `D`/`L`. v5 does both (`trigger_from_zones`, default off). The trade-off of that guard: on a panel that *doesn't* send `L`, walking from an entry-route zone into an immediate zone during the entry delay wouldn't be shown. That's one more reason to rely on `L` wherever the panel provides it.
 
-**Messages your panel sends that the plugin doesn't yet recognise** (all confirmed by Jordan's test sequence; user 3 is his code):
+**Messages your panel sends that the plugin doesn't yet recognise** (all confirmed by the tester's test sequence; user 3 is their code):
 
 | Message | Meaning |
 |---|---|

@@ -1,5 +1,5 @@
 {
-  "description": "Messages received from a real Premier Elite via COM-IP (192.168.2.10:23) on 2026-10-06 15:31-15:33 UTC, grouped exactly as they arrived in TCP chunks (taken from the 4.4.0-beta.1 'IP data received' debug log). Sequence: walk-around; full arm by keypad (user 3) then disarm; full arm, walk in (entry delay), disarm at keypad; full arm, walk in and let the alarm sound, disarm at keypad. The panel ends DISARMED with all zones clear.",
+  "description": "Messages received from a real Premier Elite via COM-IP on 2026-10-06 15:31-15:33 UTC, grouped exactly as they arrived in TCP chunks (taken from the 4.4.0-beta.1 'IP data received' debug log). Sequence: walk-around; full arm by keypad (user 3) then disarm; full arm, walk in (entry delay), disarm at keypad; full arm, walk in and let the alarm sound, disarm at keypad. The panel ends DISARMED with all zones clear.",
   "zones": { "1": "Hallway", "2": "Lounge", "3": "Kitchen", "4": "Garage", "5": "Landing" },
   "expectedFinal": { "area1": "disarmed", "zonesActive": [] },
   "chunks": [
