@@ -356,7 +356,8 @@ lib/platform.js          Dynamic platform: cache restore, config validation, acc
                          reconciliation, routing panel messages to accessories, shutdown
 lib/connection.js        TCP or serial transport, line framing, reconnect with back-off,
                          TCP keep-alive, serialised command queue (sendCommands), Wintex
-                         logout after UDL commands, ASTATUS query on connect
+                         logout after UDL commands, ASTATUS on connect and every 60 s
+                         (status_poll_interval), reconnect after three unanswered polls
 lib/protocol.js          Pure functions: parseLine() (incl. U/X/E and the ASTATUS reply),
                          LineSplitter (drops Wintex binary frames), areaBitmask(),
                          encodeCommand(). No I/O, so fully unit-testable
@@ -451,7 +452,7 @@ LSTATUS  ->  "      HOME      17:29.48 Tue 06 \r\n
 | Change arm mode | Disarms, then arms in the new mode | Sends the new arm command directly |
 | Start-up | Reads full state, then subscribes | Assumes disarmed (2.5) |
 
-A periodic `ASTATUS` (confirmed to work, 6.2) would give this plugin the same application-level heartbeat and keep HomeKit's state honest.
+A periodic `ASTATUS` (confirmed to work, 6.2) would give this plugin the same application-level heartbeat and keep HomeKit's state honest. **Implemented in this branch** (6.8).
 
 ### 6.4 Crestron vs Connect
 
@@ -514,11 +515,52 @@ A search for Texecom projects on GitHub (about 35 repositories) found two more t
 
 **[shuckc/pytexalarm](https://github.com/shuckc/pytexalarm)** (MIT, maintained, built **without** the NDA): speaks the **UDL/Wintex** protocol, which is what the Crestron port switches to after `\W<udl>/`. It can read and decode the panel's whole configuration (zones, types, areas, users) and impersonate a panel for Wintex. **Opportunity:** a Crestron-mode plugin could read zone names, types and area membership over UDL at start-up (costing one ~30 s event blackout), the same automatic discovery the Connect mode has. Note that its full config dump includes user codes, so a plugin should read only the zone and area ranges. Its README also warns that a SmartCom in *monitor mode* blocks UDL from the local network.
 
-Others checked, with nothing to adopt: openHAB bridge (Crestron), ESP32/ESPHome components (UDL polling; one is for Premier International panels), a Go port of texecom2mqtt (no licence), ARC/SIA receivers, and older Home Assistant integrations.
+Others checked, with nothing to adopt: ESP32/ESPHome components (UDL polling; one is for Premier International panels), a Go port of texecom2mqtt (no licence), ARC/SIA receivers, and older Home Assistant integrations.
+
+### 6.8 Second GitHub search: projects updated in 2026 (October 2026)
+
+A fuzzy search (repository names, descriptions and READMEs for *texecom*, *premier elite*, *wintex*, *smartcom*, *comip* and similar, plus a code search for protocol strings such as `ASTATUS` and `GET_AREA_FLAGS`) turned up about 330 repositories. Fifteen are about Texecom panels and were updated in 2026. Those already covered in 6.6 and 6.7 have nothing new since. The rest:
+
+| Project | Licence | What it is | Use here |
+|---|---|---|---|
+| [ricol99/casa](https://github.com/ricol99/casa) (`src/things/alarmtexecom.js`) | MIT (declared in package.json; no LICENSE file) | Home automation hub. Arms, part-arms and disarms a Premier Elite over the **binary UDL protocol**, and receives events by acting as the panel's **alarm receiving centre** (SIA / Contact ID over IP, with the panel's `POLL` heartbeat) | Protocol facts only (below); no code copied |
+| [GoosieZA/esphome-texecom](https://github.com/GoosieZA/esphome-texecom) (`docs/PROTOCOL.md`) | MIT | ESPHome component for Premier **International** (412/816/832) over UDL: zones, arm, disarm | Confirms the UDL framing; documents how International differs from Elite |
+| [Prinsessen/openhab-texecom-bridge](https://github.com/Prinsessen/openhab-texecom-bridge) | MIT | openHAB rules for a Premier Elite in Crestron mode through a serial-to-UDP converter. In production | `ASTATUS` every 60 s with a "last received" watchdog (adopted); arms by keypad emulation (below) |
+| [dxnphillips/scouthut-alarmnotification](https://github.com/dxnphillips/scouthut-alarmnotification) | MIT | Home Assistant alerting layer on top of texecom2mqtt (escalation, fire zones, liveness) | The "bridge up, panel silent" failure mode (adopted) |
+| [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect) | MIT | 2026 commits are dependency updates. An unmerged branch (Oct 2025) replaces keypad arming with a `\W<code>/` UDL login | Nothing new |
+| mr-miles/texecom-esp32-homeassistant | none | ESP32 serial bridge for Wintex on a Premier 24; protocol decoding not started | Nothing yet |
+| SCWPretorius/ESPHome | none | Simple Protocol polling over serial (Premier 832), monitoring only | Nothing new |
+| jd710313/texecom-power-reset | none | Hardware: a relay board to power-cycle a panel remotely | Not software |
+
+**Binary UDL arm and part-arm commands (casa, cross-checked against pytexalarm's Wintex captures).** Inside a UDL session the panel accepts short binary commands, framed like the logout in 2.0b (`[len][cmd][payload][checksum]`, the checksum makes the byte sum `0xFF`), each acknowledged with `03 06 F6`:
+
+| Command | Frame (area 1) | Effect |
+|---|---|---|
+| Full arm | `04 41 00 BA` (`A`, area 0) | Full arm |
+| Part arm *n* | `05 53 00 0n cs` (`S`, area 0, part arm *n*) | Part Arm 1, 2 or 3 |
+| Disarm | `04 44 00 B7` (`D`, area 0) | Disarm |
+
+The Crestron path's `\Y` command can only reach Part Arm 1 (6.5). After `\W<udl>/` the Crestron port is already in a binary UDL session (2.0b), so sending `S 00 0n` there instead of `\Y` could give Crestron mode the exact part-arm choice Connect mode has. **Untested here:** it arms the panel, so it waits for a supervised test. As with Connect, an ACK isn't proof (6.6); GoosieZA notes the panel ACKs almost any well-formed frame.
+
+**Elite vs International (GoosieZA):** International panels take the UDL code as raw digit values (`01 02 03 04`) and number areas from 1 (`A 01`). Elite panels take ASCII digits and, per casa and pytexalarm, area 0 for area A. Confirmed here for login only: the Elite 24 V6.05.03 accepted an ASCII UDL login through the SmartCom in normal mode and answered with its banner `Elite 24    V6.05.03`.
+
+**Status by memory address is firmware-specific.** casa reads part-arm flags from volatile memory at `0x0017B2`, and pytexalarm lists the clock (`0x003069`), area state (`0x0017B6`), armed flags (`0x0017C2`) and keypad text (`0x001196`) for an Elite 24 V4.02. On the V6.05.03 panel ([`tools/udl-status-probe.js`](../tools/udl-status-probe.js), read-only, disarmed) every one of those reads returned zeros, including the clock and keypad text, which can't be zero. The memory map has moved. A plugin shouldn't rely on fixed UDL addresses, and the same caution applies to reading zone/area config over UDL (6.7) unless the addresses are checked per firmware. Arm/disarm are commands, not addresses, so they're more likely to carry across firmware.
+
+**Keypad emulation, two more data points.** The openHAB bridge, in production on a Premier Elite, sends `KEY<digit>` for each digit of a user code and then `KEYY` (YES), 500 ms apart, one UDP datagram per key with **no line ending**. Its first version sent each key with **LF only**. Both are described as working. This plugin's failed test used CR LF (6.6). `tools/crestron-keypad-probe.py` now takes `--no-crlf` or `--lf` to try both in a supervised test.
+
+**Liveness: "bridge up, panel silent".** Texecom Alerts points out that a bridge can stay connected while nothing reaches the panel. Here that is a COM-IP or serial-to-IP converter whose serial side has failed: the TCP keep-alive (2.6) still succeeds and the plugin waits for ever. The openHAB bridge polls `ASTATUS` every 60 s and alarms when nothing has been received for a while. **Implemented in this branch** for Crestron mode:
+- `ASTATUS` every `status_poll_interval` seconds (default 60; 0 = only on connect). Skipped during a command transaction and during the post-logout blackout (2.0b), when the port only answers in binary.
+- No data for three poll intervals (not counting a blackout) → warning and reconnect.
+- The reply corrects a missed arm or disarm within a minute. That is the failure in 2.0 (lost keypad disarms), now covered even if a message is lost for some other reason.
+- A periodic "not armed" reply doesn't clear *Triggered*: the panel never reports an alarm ending (6.6), and an alarm can happen in a disarmed area (24-hour zones, tamper). Only the first reply after connecting clears it, as before.
+- An "Arming…" exit delay is unaffected: during the delay the panel still reports not armed, and HomeKit's current state is still Disarmed.
+- Tests (verified to fail without the change): polling keeps the link up while the panel answers; a silent panel triggers a reconnect; no poll during a blackout; a missed disarm is corrected and Triggered is kept.
+
+**Alarm receiving centre as an event channel (casa).** A Premier Elite can report events over IP to a monitoring receiver (SIA or Contact ID, with a periodic `POLL` heartbeat carrying line-fail, AC-fail, battery-fail, armed and engineer flags). casa runs that receiver itself and only connects over UDL to send commands. It's an event feed that doesn't need the COM-IP held open. Setting it up means programming an ARC destination in the panel, so it's noted here as an option, not tested.
 
 ### Credits
 
-Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect), Michael Marconi (texecom_alarm), Chris Shucksmith (pytexalarm).
+Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect), Michael Marconi (texecom_alarm), Chris Shucksmith (pytexalarm), ricol99 (casa), GoosieZA (esphome-texecom), Prinsessen (openhab-texecom-bridge), dxnphillips (Texecom Alerts).
 
 ---
 
