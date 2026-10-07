@@ -125,3 +125,23 @@ test('periodic ASTATUS corrects a missed disarm but leaves Triggered alone', () 
   platform.handleLine('"NN');
   assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
 });
+
+test('Crestron Night/Home use the configured part arm (binary S), else \\Y as before', async () => {
+  const Target = hap.Characteristic.SecuritySystemTargetState;
+  for (const [overrides, target, expected] of [
+    [{}, Target.NIGHT_ARM, 'Y\x01'],
+    [{ night_part_arm: 1, home_part_arm: 2 }, Target.NIGHT_ARM, Buffer.from([0x05, 0x53, 0x00, 0x01, 0xa6])],
+    [{ night_part_arm: 1, home_part_arm: 2 }, Target.STAY_ARM, Buffer.from([0x05, 0x53, 0x00, 0x02, 0xa5])],
+    [{ night_part_arm: 1, home_part_arm: 2 }, Target.AWAY_ARM, 'A\x01'],
+  ]) {
+    const api = createApi();
+    const platform = new TexecomPlatform(silentLog, { ...config, udl: '1234', ...overrides }, api);
+    api.emit('didFinishLaunching');
+    let sent = null;
+    platform.connection = { sendCommands: async (commands) => {
+      sent = commands;
+    } };
+    await platform.areas.get(1).setTargetState(target);
+    assert.deepEqual(sent, ['W1234', expected]);
+  }
+});

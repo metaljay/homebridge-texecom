@@ -68,3 +68,13 @@ test('strips Wintex binary frames (e.g. the logout ACK) before line splitting', 
   splitter.push(Buffer.concat([Buffer.from([0xf6]), Buffer.from('"Z0011\r\n')]));
   assert.deepEqual(lines, ['"Z0011']);
 });
+
+test('builds binary UDL frames (part arm confirmed on a real panel)', () => {
+  const { wintexFrame, partArmFrame, WINTEX_LOGOUT } = require('../lib/protocol');
+  assert.deepEqual(WINTEX_LOGOUT, Buffer.from([0x03, 0x48, 0xb4]));
+  assert.deepEqual(wintexFrame(0x44, [0x00]), Buffer.from([0x04, 0x44, 0x00, 0xb7]));
+  assert.deepEqual(partArmFrame(1, 1), Buffer.from([0x05, 0x53, 0x00, 0x01, 0xa6]));
+  assert.deepEqual(partArmFrame(1, 2), Buffer.from([0x05, 0x53, 0x00, 0x02, 0xa5]));
+  assert.throws(() => partArmFrame(2, 1), RangeError);
+  assert.throws(() => partArmFrame(1, 4), RangeError);
+});

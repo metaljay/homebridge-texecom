@@ -355,6 +355,26 @@
           "functionBody": "return model.protocol === 'connect';"
         }
       },
+      "night_part_arm": {
+        "title": "HomeKit Night uses part arm",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3,
+        "description": "Crestron only, area 1: the part arm (1-3) that HomeKit Night sets, using the binary UDL command. Leave empty to keep the Crestron Y command, which always sets Part Arm 1.",
+        "condition": {
+          "functionBody": "return model.protocol !== 'connect';"
+        }
+      },
+      "home_part_arm": {
+        "title": "HomeKit Home uses part arm",
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 3,
+        "description": "Crestron only, area 1: the part arm (1-3) that HomeKit Home sets, using the binary UDL command. Leave empty to keep the Crestron Y command, which always sets Part Arm 1.",
+        "condition": {
+          "functionBody": "return model.protocol !== 'connect';"
+        }
+      },
       "status_poll_interval": {
         "title": "Status check (seconds)",
         "type": "integer",
@@ -446,6 +466,8 @@
         "part_arm_3",
         "time_sync_interval",
         "status_poll_interval",
+        "night_part_arm",
+        "home_part_arm",
         "default_arm_state",
         {
           "key": "remote_users",

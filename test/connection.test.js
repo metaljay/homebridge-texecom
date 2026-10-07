@@ -184,3 +184,41 @@ test('no ASTATUS poll is sent during a transaction or the post-logout blackout',
   conn.stop();
   panel.close();
 });
+
+test('binary UDL frame: login without OK still proceeds, ACK resolves, NAK rejects', async (t) => {
+  const raw = [];
+  const sockets = new Set();
+  let nak = false;
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('data', (data) => {
+      raw.push(Buffer.from(data));
+      if (data[0] === 0x05 && data[1] === 0x53) {
+        socket.write(nak ? Buffer.from([0x03, 0x0f, 0xed]) : Buffer.from([0x03, 0x06, 0xf6]));
+      }
+      // The login (\W1234/) gets no OK, as on the real panel.
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const conn = new TexecomConnection({ log: silentLog, host: '127.0.0.1', port: server.address().port,
+    loginTimeoutMs: 100, statusPollMs: 0 });
+  conn.start();
+  await once(conn, 'connected');
+
+  const frame = Buffer.from([0x05, 0x53, 0x00, 0x02, 0xa5]);
+  t.after(() => {
+    conn.stop();
+    sockets.forEach((s) => s.destroy());
+    server.close();
+  });
+  await conn.sendCommands(['W1234', frame]);
+  await new Promise((r) => setTimeout(r, 50)); // let the logout arrive
+  assert.equal(raw.filter((b) => b.toString('latin1') === '\\W1234/').length, 1, 'login sent once');
+  assert.ok(raw.some((b) => b.equals(frame)));
+  assert.ok(raw.some((b) => b.equals(Buffer.from([0x03, 0x48, 0xb4]))), 'logout sent');
+
+  nak = true;
+  conn.blackoutUntil = 0;
+  await assert.rejects(conn.sendCommands(['W1234', frame]), /refused/);
+});
