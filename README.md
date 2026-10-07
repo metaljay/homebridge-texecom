@@ -67,7 +67,7 @@ In **Plugins**, find **Homebridge Texecom** and open its **Settings**.
 | **Zones and areas** | Nothing: they're read from your panel, with their names |
 | **Buttons to show in the Home app** | Only the ones your panel has a use for. ✅ Away and ✅ Night suit most homes |
 | **Part Arm 1 / 2 / 3 is** | Match them to your panel (see [Know your part arms](#part-arms) below). Defaults: Part Arm 1 = Night, Part Arm 2 = Home |
-| **Advanced → Keep the panel clock right** | **24** |
+| **Advanced → Keep the panel clock right** | **24**, and **Your time zone**: e.g. `Europe/London` |
 
 Click **Save**.
 
@@ -141,7 +141,8 @@ Most people should use the settings page. To edit the config yourself, open **JS
     "ip_port": 10001,
     "udl": "1234",
     "homekit_modes": ["away", "night"],
-    "time_sync_interval": 24
+    "time_sync_interval": 24,
+    "time_zone": "Europe/London"
 }
 ```
 
@@ -152,6 +153,7 @@ Most people should use the settings page. To edit the config yourself, open **JS
 | `udl` | Your UDL code, in quotes. Texecom's default is `"1234"` |
 | `homekit_modes` | Buttons besides Off: any of `"away"`, `"night"`, `"stay"` (shown as Home) |
 | `time_sync_interval` | Hours between panel clock checks: `24`, or `0` for off |
+| `time_zone` | Your time zone, e.g. `"Europe/London"`, so the clock check sets local time (Homebridge in Docker runs on UTC) |
 | `part_arm_1` / `part_arm_2` / `part_arm_3` | Which Home app mode each part arm is: `"night"`, `"stay"`, `"away"` or `""` (not used). Defaults: `"night"`, `"stay"`, `""` |
 | `zones`, `areas` | Leave out: they're read from the panel |
 | `debug` | `true` logs every message from the panel, for reporting problems |

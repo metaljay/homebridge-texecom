@@ -246,6 +246,40 @@ test('time_sync_interval sets a drifted panel clock and leaves an accurate one a
   }
 });
 
+test('the clock check leaves a whole-hour difference alone unless time_zone is set', async () => {
+  // Real panel, 7 Oct: Homebridge in Docker ran on UTC while the panel showed BST,
+  // and the clock check "corrected" the panel an hour back.
+  const ctx = await setup({ time_sync_interval: 24 });
+  try {
+    ctx.panel.clockOffsetMs = 3558 * 1000;
+    assert.equal(await ctx.platform.connectPanel.syncClock(), false);
+    assert.equal(ctx.panel.clockSetTo, undefined);
+  } finally {
+    teardown(ctx);
+  }
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const ctx2 = await setup({ time_sync_interval: 24, time_zone: zone });
+  try {
+    ctx2.panel.clockOffsetMs = 3558 * 1000;
+    assert.equal(await ctx2.platform.connectPanel.syncClock(), true);
+    assert.equal(ctx2.panel.clockSetTo.length, 6);
+  } finally {
+    teardown(ctx2);
+  }
+});
+
+test('time_zone sets the panel to that zone\'s local time', async () => {
+  const ctx = await setup({ time_sync_interval: 24, time_zone: 'Asia/Tokyo' });
+  try {
+    const now = new Date();
+    await ctx.platform.connectPanel.syncClock(now);
+    const tokyo = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tokyo', hour: 'numeric', hourCycle: 'h23' }).format(now));
+    assert.equal(ctx.panel.clockSetTo[3], tokyo);
+  } finally {
+    teardown(ctx);
+  }
+});
+
 test('an unanswered keep-alive reconnects instead of sitting on a dead session', async () => {
   const ctx = await setup({ _connectTiming: { ...fast, keepaliveMs: 100 } });
   try {

@@ -437,7 +437,16 @@
         "condition": {
           "functionBody": "return model.protocol === 'connect';"
         },
-        "description": "Compares the panel clock with this machine and corrects it if it's more than a minute out, for example after a power cut. 24 is a good choice. 0 = off."
+        "description": "Compares the panel clock with your local time and corrects it if it's more than a minute out, for example after a power cut. 24 is a good choice, with your time zone set below. 0 = off."
+      },
+      "time_zone": {
+        "title": "Your time zone",
+        "type": "string",
+        "placeholder": "Europe/London",
+        "condition": {
+          "functionBody": "return model.protocol === 'connect';"
+        },
+        "description": "Used by the clock check, so the panel shows your local time. Homebridge in Docker usually runs on UTC, so set this (e.g. Europe/London) whenever the clock check is on. Without it, the clock check won't move the panel's clock by whole hours."
       },
       "trigger_from_zones": {
         "title": "Raise an alarm from zone activity",
@@ -593,6 +602,7 @@
           "key": "time_sync_interval",
           "type": "number"
         },
+        "time_zone",
         "trigger_from_zones",
         "debug",
         "name"

@@ -29,7 +29,8 @@ Everything here was tested on a real **Premier Elite 24 (firmware V6.05.03)** wi
 | 3 | UDL login never logged out ([2.3](#23-every-command-from-homekit-blacks-out-the-panel-for-60-s)) | Every arm/disarm from HomeKit silences **all** panel events for ~60 s; a real alarm reached HomeKit 65 s late | Binary logout `03 48 B4` (cuts it to ~30 s) |
 | 4 | 2 s command timeout; commands from different sources interleave ([2.4](#24-commands-interleave-and-the-timeout-is-too-short)) | Duplicate logins on every arm; `OK`s credited to the wrong command | A command queue and an 8 s login timeout |
 | 5 | Areas reset to Disarmed on restart ([2.5](#25-areas-show-disarmed-after-every-restart)) | Wrong state, possibly for hours | Persist the state, and ask the panel (`ASTATUS`) on connect |
-| 6 | `string` dependency ([2.10](#210-dependencies)) | High-severity advisory, no fix available | Remove it |
+| 6 | Clock sync uses the machine's time zone ([2.12](#212-clock-sync-sets-the-wrong-time-when-homebridge-runs-on-utc)) | Homebridge in Docker runs on UTC, so in summer the panel is set an hour wrong | A configurable time zone; never shift by whole hours without one |
+| 7 | `string` dependency ([2.10](#210-dependencies)) | High-severity advisory, no fix available | Remove it |
 
 ### What the fork adds
 
@@ -160,7 +161,15 @@ Lines 790–791 start a new dwell timer without clearing the previous one, so a 
 - **Numbers with both a minimum and a maximum render as sliders** in the Homebridge UI, so `time_sync_interval` (0–744) is a slider with no visible value. Drop the maximum, or set the layout type to `number`.
 - **`headerDisplay` says "Official Texecom Homebridge plugin"**, but Texecom doesn't publish it.
 
-### 2.12 Smaller items
+### 2.12 Clock sync sets the wrong time when Homebridge runs on UTC
+
+*Confirmed on the real panel (in the fork's Connect clock check, which worked the same way; fixed there).*
+
+**What happens.** The clock sync compares the panel with `new Date()` in the machine's local time (lines 1107–1123) and sets the panel to it. The Homebridge Docker image runs on **UTC** unless `TZ` is set, while the panel shows local time. In UK summer time, the sync found the panel "3558 s ahead" and set it an hour back.
+
+**Fix.** Add a `time_zone` setting (e.g. `Europe/London`) and compute the panel's wall-clock time in that zone (`Intl.DateTimeFormat` with `timeZone`). Without one, never apply a difference of about a whole number of hours: log a warning instead. The fork does both.
+
+### 2.13 Smaller items
 
 - **Messages not recognised:** the panel also sends `"U` (user code entered), `"X` (exit delay started), `"E` (entry delay) and `"L` (alarm); see [3.1](#31-crestron-messages). `"X` can drive the Home app's "Arming…".
 - **User numbers:** this panel reports HomeKit arms as **user 29** and remote disarms as **user 0**. The `app_users` / `remote_users` defaults (25, 254) don't match, which supports keeping them configurable.
