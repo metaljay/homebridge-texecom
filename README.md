@@ -216,7 +216,32 @@ The Homebridge log should show `Connected to Texecom panel via` followed by the 
 
 ## All settings (for editing config.json directly)
 
-Crestron example:
+Most people should use the settings page in Step 2. If you prefer to edit the config yourself: in the Homebridge UI open **JSON Config**, and add one of these blocks inside the `"platforms": [ … ]` list (with a comma between it and the block before it). The examples are complete and safe to copy; the notes under each say what to change. Don't add notes or comments inside the config itself: Homebridge won't start if the file isn't valid JSON.
+
+### Texecom Connect example
+
+Zones and areas are read from the panel, so this is all you need:
+
+```json
+{
+    "platform": "Texecom",
+    "protocol": "connect",
+    "ip_address": "192.168.1.50",
+    "ip_port": 10001,
+    "udl": "1234",
+    "homekit_modes": ["away", "night"],
+    "time_sync_interval": 24
+}
+```
+
+**What to change:**
+- `ip_address`: your SmartCom's address. Find it in your router's list of connected devices, and reserve it there so it doesn't change.
+- `ip_port`: leave at 10001.
+- `udl`: your panel's UDL code, in quotes. Texecom's default is `"1234"`; if that doesn't work, your installer may have changed it.
+- `homekit_modes`: the buttons you want in the Home app besides Off. Use any of `"away"`, `"night"` and `"stay"` (shown as Home). Most homes: Away and Night.
+- `time_sync_interval`: how often, in hours, to check the panel clock and put it right. 24 is a good choice; 0 turns it off.
+
+### Crestron example
 
 ```json
 {
@@ -236,40 +261,41 @@ Crestron example:
 }
 ```
 
-Texecom Connect example (zones and areas are read from the panel):
+**What to change:**
+- `ip_address`: your SmartCom's address (or ComIP's, or adapter's). Find it in your router's list of connected devices, and reserve it there so it doesn't change. For a USB-serial cable instead, replace `ip_address` and `ip_port` with `"serial_device": "/dev/ttyUSB0"` (or whatever your adapter is called) and `"baud_rate": 19200`.
+- `ip_port`: 10001 for a SmartCom or ComIP; for a serial-to-network adapter, the port set on it (often 23).
+- `udl`: your panel's UDL code, in quotes. Texecom's default is `"1234"`.
+- `zones`: one line per zone you want in the Home app, with a comma after every line except the last.
+  - `name`: what the Home app calls it.
+  - `zone_number`: the zone's number on your keypad or in Wintex.
+  - `zone_type`: `"motion"` for movement detectors, `"contact"` for door and window contacts, `"smoke"` or `"carbonmonoxide"`.
+  - `dwell`: milliseconds to keep showing "detected" after the zone clears. 5000 for motion detectors, 0 for contacts.
+- `areas`: usually just one, area 1 (area A on the keypad). `name` is what the Home app calls the alarm.
+- `homekit_modes`: as for Texecom Connect above.
+- `night_part_arm`: which part arm (1, 2 or 3) the Night button sets. Add `"home_part_arm"` too if you show the Home button.
 
-```json
-{
-    "platform": "Texecom",
-    "protocol": "connect",
-    "ip_address": "192.168.1.50",
-    "ip_port": 10001,
-    "udl": "1234",
-    "homekit_modes": ["away", "night"]
-}
-```
+### Every setting
 
-Keep the UDL code in quotes, so a code starting with 0 keeps it.
-
-| Key | Default | Description |
+| Key | Default | What it does |
 | --- | --- | --- |
-| `protocol` | `"crestron"` | `"crestron"` or `"connect"` |
-| `ip_address` | | SmartCom, ComIP or adapter address |
-| `ip_port` | `10001` | Its port |
-| `serial_device` | | Crestron over a serial cable, e.g. `/dev/ttyUSB0` (instead of `ip_address`) |
-| `baud_rate` | `19200` | Serial speed, with `serial_device` |
-| `udl` | | UDL code, as a string. Needed to arm/disarm; always needed for Connect |
-| `zones[]` | | `name`, `zone_number`, `zone_type` (`motion`, `contact`, `smoke`, `carbonmonoxide`), `dwell` (ms). Optional with Connect |
-| `areas[]` | | `name`, `area_number`, `zones` (only with `trigger_from_zones`). Optional with Connect |
-| `homekit_modes` | all | Buttons offered in the Home app: any of `away`, `night`, `stay` (Off always) |
-| `night_part_arm` / `home_part_arm` | | Crestron, area 1: part arm (1-3) set by Night / Home. Unset = Part Arm 1 |
-| `part_arm_1` / `part_arm_2` / `part_arm_3` | `"night"` / `"stay"` / `""` | Connect: Home app mode for each part arm (`night`, `stay`, `away`, or `""` for unused) |
-| `default_arm_state` | `"away"` | Crestron: how a keypad or keyfob arm is shown (`away`, `night`, `stay`) |
-| `remote_users` | `[]` | Crestron: keyfob user numbers, always shown as Away |
+| `platform` | | Must be `"Texecom"` |
+| `protocol` | `"crestron"` | `"connect"` for Texecom Connect, `"crestron"` for Crestron |
+| `ip_address` | | Address of the SmartCom, ComIP or adapter (from your router's device list) |
+| `ip_port` | `10001` | Its port: 10001 for a SmartCom or ComIP |
+| `serial_device` | | Crestron over a USB-serial cable instead of `ip_address`, e.g. `"/dev/ttyUSB0"` |
+| `baud_rate` | `19200` | Speed of the panel's COM port, with `serial_device` |
+| `udl` | | The panel's UDL code, in quotes (default `"1234"`). Needed to arm and disarm; always needed for Texecom Connect |
+| `zones` | | Crestron: the zones to show, each with `name`, `zone_number`, `zone_type` (`"motion"`, `"contact"`, `"smoke"`, `"carbonmonoxide"`) and `dwell` (milliseconds). Texecom Connect: leave out, they're read from the panel |
+| `areas` | | Crestron: the areas to show, each with `name` and `area_number`. Texecom Connect: leave out |
+| `homekit_modes` | all three | Buttons in the Home app besides Off: any of `"away"`, `"night"`, `"stay"` (Home) |
+| `night_part_arm` / `home_part_arm` | Part Arm 1 | Crestron, area 1: the part arm (1, 2 or 3) the Night / Home button sets |
+| `part_arm_1` / `part_arm_2` / `part_arm_3` | `"night"` / `"stay"` / `""` | Texecom Connect: which Home app mode each part arm is (`"night"`, `"stay"`, `"away"`, or `""` for not used) |
+| `default_arm_state` | `"away"` | Crestron: how an arm from the keypad or a keyfob is shown (`"away"`, `"night"` or `"stay"`) |
+| `remote_users` | none | Crestron: panel user numbers of keyfobs, e.g. `[5, 6]`; their arms show as Away |
 | `status_poll_interval` | `60` | Crestron: seconds between status checks; 0 = only after connecting |
-| `time_sync_interval` | `0` | Connect: hours between panel clock checks; 0 = off |
-| `trigger_from_zones` | `false` | Infer alarms from zone activity. Leave off |
-| `debug` | `false` | Log every panel message |
+| `time_sync_interval` | `0` | Texecom Connect: hours between panel clock checks; 0 = off |
+| `trigger_from_zones` | `false` | Guess alarms from zone activity. Leave off: the panel reports real alarms |
+| `debug` | `false` | Log every message from the panel, for reporting problems |
 
 ## Development
 
