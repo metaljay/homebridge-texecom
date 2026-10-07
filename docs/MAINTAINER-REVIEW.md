@@ -540,7 +540,20 @@ A fuzzy search (repository names, descriptions and READMEs for *texecom*, *premi
 | Part arm *n* | `05 53 00 0n cs` (`S`, area 0, part arm *n*) | Part Arm 1, 2 or 3 |
 | Disarm | `04 44 00 B7` (`D`, area 0) | Disarm |
 
-The Crestron path's `\Y` command can only reach Part Arm 1 (6.5). After `\W<udl>/` the Crestron port is already in a binary UDL session (2.0b), so sending `S 00 0n` there instead of `\Y` could give Crestron mode the exact part-arm choice Connect mode has. **Untested here:** it arms the panel, so it waits for a supervised test. As with Connect, an ACK isn't proof (6.6); GoosieZA notes the panel ACKs almost any well-formed frame.
+The Crestron path's `\Y` command can only reach Part Arm 1 (6.5). After `\W<udl>/` the Crestron port is already in a binary UDL session (2.0b), so sending `S 00 0n` there instead of `\Y` gives Crestron mode the exact part-arm choice Connect mode has.
+
+**Confirmed on real hardware** (Elite 24 V6.05.03, Crestron port, [`tools/crestron-udl-arm-test.py`](../tools/crestron-udl-arm-test.py), supervised):
+
+| Time | Sent / received |
+|---|---|
+| 08:12:30 | `\W<udl>/` (no text `OK`, as usual on this panel) |
+| 08:12:38 → :39 | `05 53 00 01 A6` (Part Arm 1) → `03 06 F6`; logout `03 48 B4` → `03 06 F6`. Panel armed (keypad beep) |
+| 08:13:11 | feed resumes: `"X0010`, `"A00129` (remote user 29) |
+| 08:13:19 | `LSTATUS` → `" * PART ARMED * 08:12.38 Wed 07` |
+| 08:13:56 → 08:14:05 | `\W<udl>/`, `04 44 00 B7` (Disarm) → `03 06 F6`; logout → `03 06 F6` |
+| 08:14:36 – :53 | `"D0010` (remote user 0), `ASTATUS` → `"NN`, `LSTATUS` → `HOME` |
+
+So the binary commands work inside the session the plugin already opens, with the same ~30 s blackout as the text commands. Part Arm 2/3 use the same frame with a different last payload byte (not tried: their zones aren't set up for testing on this panel). **`LSTATUS` shows `PART ARMED` while part-armed,** which lets Crestron mode tell a part arm from a full arm (for example after a keypad arm) without logging in. It doesn't say *which* part arm. As with Connect, an ACK isn't proof (6.6); GoosieZA notes the panel ACKs almost any well-formed frame, so the result should be taken from the events and `ASTATUS` that follow.
 
 **Elite vs International (GoosieZA):** International panels take the UDL code as raw digit values (`01 02 03 04`) and number areas from 1 (`A 01`). Elite panels take ASCII digits and, per casa and pytexalarm, area 0 for area A. Confirmed here for login only: the Elite 24 V6.05.03 accepted an ASCII UDL login through the SmartCom in normal mode and answered with its banner `Elite 24    V6.05.03`.
 
