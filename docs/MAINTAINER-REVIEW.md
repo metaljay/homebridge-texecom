@@ -9,6 +9,8 @@
 
 ## Summary
 
+**Update, 7 Oct:** `4.4.0` was published today. Its code is identical to `4.4.0-beta.1` (only the version, changelog and release notes differ), so everything below that says "still present in `4.4.0-beta.1`" applies to `4.4.0` unchanged.
+
 This is a review of `homebridge-texecom-full` against current Homebridge plugin practice, tested against your `4.4.0-beta.1` and on a live Premier Elite installation. It covers:
 
 1. problems your beta already fixes, for reference;
