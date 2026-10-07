@@ -224,11 +224,21 @@ The panel doesn't say whether an arm was full or part: `LSTATUS` can tell, but n
 - After "Part Armed 1" the panel sends an undocumented area state **6**, and a flag re-read straight after can still show the **exit flag**.
 - Bulk area-flag reads work here (72 bytes); some older firmware refuses them, so fall back to one flag at a time.
 - Wintex can connect through the same SmartCom while a Connect client is connected.
+- A SmartCom **refuses a new session for about a minute** after the last one closed (a restart, or the drop at alarm time); meanwhile a login gets either a closed socket or 80-byte replies that aren't frames. Keep retrying; don't treat it as a wrong UDL.
+- **Switching arm mode** (disarm, then arm) produces an area "disarmed" event **0.3 s** before the new exit delay. Passed straight to HomeKit, that shows (and may notify) Disarmed in between.
+- **Zone alarms are logged twice**: once when they happen and once when reported (`communicated` set). Sometimes only the second arrives, after the disarm; the zone's state byte has its *alarmed* bit (0x10) set at once, which is the quicker way to name the zone.
+- **ARM_FAILED (log type 85) carries the zone** that stopped the arm in `parameter`, one log per active zone (zones that see you at the end of the exit time; the panel sounds its "fail to set" warning).
+- Area state **7** follows Part Arm 2 the way 6 follows Part Arm 1 ("settled").
+- **Tampers that aren't zones** are log events with group 11 (tamper) and 12 (restored): type **60** *Panel Box Tamper* (the lid, the keypad shows "Panel Lid Tamper") and **62** *Auxiliary Tamper*. On this install every detector's tamper is on the shared auxiliary circuit, so the panel can't say which detector was opened, and zone tamper states never change. Names for all log types are in texecom-connect.
+- **Mains failure**: *AC Fail* (type 47, group 9) arrives at once, but the restore was **never logged** (waited 14 minutes, twice). The power reading (command 25) shows it: on battery both currents read **0** and the voltage falls (13.0 → 12.2 V in 2 minutes); on mains ~300 mA at ~13.6 V. Reading it every keep-alive gives the restore within 30 s, and the right answer after a restart.
+- **A total power loss resets the panel clock** (to 31 Oct 2023 on V6.05.03), so clock sync matters on reconnect, not only daily.
+- The keypad text (command 13) shows alerts, e.g. "System Alerts!" or "Panel Lid Tamper", with the clock on the second line.
 
 ### 3.4 HomeKit
 
 - HomeKit gives up on a set request after about **9 s**, so answer `onSet` quickly and apply the outcome when the panel confirms.
 - iOS caches an alarm's `validValues` (the arm buttons) for an accessory it already knows; a change only shows on a new accessory.
+- The security system service has optional **StatusTampered** and **StatusFault** characteristics; the fork sets them from the panel's tampers and faults (including mains, from the power reading), so the Home app shows them on the alarm.
 
 ---
 
@@ -257,7 +267,7 @@ lib/connectPanel.js       discovery, full state read on (re)connect, part-arm tr
 lib/connect/NOTICE        credits: texecom-connect (Apache-2.0), texecom2mqtt (MIT)
 ```
 
-Part Arm 1/2/3 map to Home app modes with `part_arm_1`…`part_arm_3` (default Night / Home / unused). The exit delay shows "Arming…".
+Part Arm 1/2/3 map to Home app modes with `part_arm_1`…`part_arm_3` (default Night / Home / unused). The exit delay shows "Arming…". A mode switch never shows Disarmed in between, and the alarm shows **Tampered** and **Fault** (mains, battery, communication) from the panel (see 3.3).
 
 ### 4.2 Crestron improvements
 
@@ -319,8 +329,9 @@ tools/                 fake panels, session replay, probes used on the real pane
 | Keypad arm, entry delay and keypad disarm | Seen correctly |
 | Homebridge 1.11 and 2.4 | Both |
 | Keypad emulation, UDL memory reads | Don't work on V6.05.03 (see 3.2) |
+| Connect (through a Home Assistant port of the same code, same panel): Away, Night, Part Arm 2, mode switches, keypad arms, failed arms, three alarms, panel lid and detector tampers, two mains failures, a full power-down | All as described in 3.3; the Home app via HomeKit Bridge showed Away / Night / Off and followed keypad arms |
 
-Not yet exercised on the real panel: full arm (Away) from HomeKit, reset-then-disarm during an alarm over Connect, tamper.
+Not yet exercised on the real panel with this plugin itself: the Tampered/Fault characteristics and the mode-switch fix (covered by tests against the fake panel).
 
 ---
 
@@ -339,5 +350,7 @@ Not yet exercised on the real panel: full arm (Away) from HomeKit, reset-then-di
 | [Prinsessen/openhab-texecom-bridge](https://github.com/Prinsessen/openhab-texecom-bridge) | MIT | Periodic `ASTATUS` with a watchdog |
 | [dxnphillips/scouthut-alarmnotification](https://github.com/dxnphillips/scouthut-alarmnotification) | MIT | The "connected but panel silent" failure mode |
 | [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect) | MIT | Keypad-emulation arming (not accepted by this panel) |
+
+The same protocol work is also available as a Home Assistant integration: [metaljay/ha-texecom](https://github.com/metaljay/ha-texecom).
 
 Original plugin by Kieran Jones, maintained by Max Christian and Chris Posthumus. Protocol credits for the Connect code are in [lib/connect/NOTICE](../lib/connect/NOTICE).

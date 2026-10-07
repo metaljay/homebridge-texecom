@@ -220,6 +220,11 @@ class FakeConnectPanel {
         ack();
         this.setArea(0);
         break;
+      case P.COMMAND.GET_SYSTEM_POWER:
+        // ref, system V, battery V, system I, battery I. On battery a real
+        // panel reads 0 for both currents and its voltage falls.
+        reply(Buffer.from(this.onBattery ? [100, 92, 94, 0, 0] : [100, 99, 98, 34, 2]));
+        break;
       case P.COMMAND.RESET_AREA:
         this.wasReset = true;
         ack();

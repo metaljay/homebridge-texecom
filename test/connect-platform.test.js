@@ -373,3 +373,40 @@ test('single-flag reads reject a NAK that would read as an alarm', async () => {
     panel.close();
   }
 });
+
+test('switching Night to Away never shows Disarmed in between', async () => {
+  const ctx = await setup();
+  try {
+    const current = ctx.area.service.getCharacteristic(Current);
+    await ctx.area.setTargetState(Target.NIGHT_ARM);
+    await until(() => current.value === Current.NIGHT_ARM);
+    const seen = [];
+    current.on('change', ({ newValue }) => seen.push(newValue));
+    await ctx.area.setTargetState(Target.AWAY_ARM);
+    await until(() => current.value === Current.AWAY_ARM);
+    assert.ok(!seen.includes(Current.DISARMED), `saw ${seen}`);
+  } finally {
+    teardown(ctx);
+  }
+});
+
+test('tampers and mains failure show on the security system', async () => {
+  const ctx = await setup();
+  try {
+    const tampered = ctx.area.service.getCharacteristic(C.StatusTampered);
+    const fault = ctx.area.service.getCharacteristic(C.StatusFault);
+    ctx.panel.sendLog(60, 11, 0, 0); // panel lid off
+    await until(() => tampered.value === 1);
+    ctx.panel.sendLog(60, 12, 0, 0); // back on
+    await until(() => tampered.value === 0);
+
+    ctx.panel.onBattery = true;
+    ctx.panel.sendLog(47, 9, 0, 0); // AC Fail; the panel never logs the restore
+    await until(() => fault.value === 1);
+    ctx.panel.onBattery = false;
+    await ctx.platform.connectPanel.readPower();
+    assert.equal(fault.value, 0);
+  } finally {
+    teardown(ctx);
+  }
+});

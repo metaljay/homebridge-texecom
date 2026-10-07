@@ -4,6 +4,10 @@ This change log documents all release versions of homebridge-texecom
 
 ### 5.0.0
 
+- **NEW** - Connect: the alarm shows **Tampered** (panel lid, keypad, bell box, detectors) and **Fault** (mains failure, low battery, communication) in the Home app. Mains is read from the panel's power reading, as the panel doesn't log the mains coming back
+- **FIX** - Connect: switching arm mode from HomeKit (e.g. Night → Away) showed Disarmed for a moment in between
+- **FIX** - Connect: a zone alarm was logged twice
+
 **Breaking:** accessories now appear behind the Homebridge bridge instead of being published as separate external accessories. Remove the old Texecom accessories from the Home app once, then restart Homebridge. See "Upgrading from 4.x" in the README.
 
 - **FIX** - The first arm/disarm from HomeKit after any panel event was silently ignored (the `setByAlarm` flag was never cleared because `updateValue` doesn't trigger `onSet`)
