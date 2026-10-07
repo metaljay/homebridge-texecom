@@ -36,6 +36,7 @@ Everything here was tested on a real **Premier Elite 24 (firmware V6.05.03)** wi
 
 - **Texecom Connect support** ([4.1](#41-texecom-connect-support)): works with a SmartCom left in its normal mode, which is how most users own their hardware. Zones and areas are found automatically, arm modes are exact, and there's no blackout after HomeKit commands.
 - **Crestron improvements** ([4.2](#42-crestron-improvements)): the exact part arm for Night/Home, a regular status check that catches missed events and dead links, and fixes for problems found on the real panel.
+- **Tamper and fault status on the alarm** ([3.3](#33-texecom-connect), [3.4](#34-homekit)): the panel lid, detector tampers and a mains failure show as *Tampered* / *Fault* in the Home app; mode switches no longer flash *Disarmed*.
 - **Choice of arm buttons in the Home app** ([4.3](#43-choosing-the-home-app-arm-buttons)), and a **settings page and README rewritten for end users** ([4.4](#44-settings-page-and-readme)).
 
 **Suggested route:** small patches against your code for section 2, keeping your accessory identities; Connect as a self-contained addition. See [section 5](#5-suggested-route).

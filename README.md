@@ -1,5 +1,7 @@
 > **About this fork.** A review and demonstrator fork of [homebridge-texecom-full](https://github.com/K1LL3R234/homebridge-texecom), offered to its maintainer to adopt. It isn't published to npm. It adds **Texecom Connect** support (use your SmartCom as it is) and fixes for the existing Crestron mode, all tested on a real Premier Elite. Details and evidence: [docs/MAINTAINER-REVIEW.md](docs/MAINTAINER-REVIEW.md).
 
+> 🏡 **Using Home Assistant?** The same protocol work is available as a Home Assistant integration (installable through HACS, no Homebridge needed): [metaljay/ha-texecom](https://github.com/metaljay/ha-texecom).
+
 # Homebridge Texecom
 
 Control your Texecom **Premier Elite** alarm from the Apple **Home** app, using the **SmartCom** you already have.
@@ -112,6 +114,7 @@ That's it. 🎉
 
 ## 💡 Good to know
 
+- 🔧 **Tamper and faults** (Texecom Connect): the alarm shows *Tampered* while the panel lid or a detector is open, and *Fault* during a mains failure or other panel fault.
 - 🚨 **When the alarm goes off**, the panel briefly drops the connection to send its own alarm notification. The plugin reconnects and catches up within seconds.
 - 🧩 **Changing the arm buttons later** makes the alarm reappear in the Home app as a new accessory (the Home app remembers an alarm's buttons). Set its room and notifications again.
 - 🔌 **Wintex** can still connect through the SmartCom while Homebridge is connected.
