@@ -1,625 +1,334 @@
-# Review notes for the maintainer
+# Review of homebridge-texecom-full
 
-**For:** Chris Posthumus (maintainer of `homebridge-texecom-full`)
+**For:** Chris Posthumus, maintainer of `homebridge-texecom-full`
 **From:** [metaljay/homebridge-texecom](https://github.com/metaljay/homebridge-texecom), prepared with Claude Code
-**Date:** 6 October 2026
-**Compared against:** your `4.4.0-beta.0` branch at `674be7c` (*Add panel clock sync*, 4.4.0-beta.1 in the changelog)
+**Reviewed:** release `4.4.0` (same code as `4.4.0-beta.1`). Line numbers refer to its `index.js`.
+
+Everything here was tested on a real **Premier Elite 24 (firmware V6.05.03)** with Homebridge 2.4 on a Raspberry Pi. The panel has a SmartCom on Com Port 1 and a Crestron port (Com Port 3) bridged to the network by an ESP8266 serial server, so both protocols could be watched side by side. Items marked *Reproduced* were also run against 4.4.0 with a fake panel ([`tools/fake-panel.js`](../tools/fake-panel.js)), so you can repeat them.
+
+## Contents
+
+1. [Summary](#1-summary)
+2. [Bugs in 4.4.0](#2-bugs-in-440)
+3. [How the panel behaves](#3-how-the-panel-behaves)
+4. [What the fork adds, and why](#4-what-the-fork-adds-and-why)
+5. [Suggested route](#5-suggested-route)
+6. [Testing done](#6-testing-done)
+7. [Other projects and credits](#7-other-projects-and-credits)
 
 ---
 
-## Summary
+## 1. Summary
 
-**Update, 7 Oct:** `4.4.0` was published today. Its code is identical to `4.4.0-beta.1` (only the version, changelog and release notes differ), so everything below that says "still present in `4.4.0-beta.1`" applies to `4.4.0` unchanged.
+### Most important findings
 
-This is a review of `homebridge-texecom-full` against current Homebridge plugin practice, tested against your `4.4.0-beta.1` and on a live Premier Elite installation. It covers:
+| # | Problem in 4.4.0 | Effect | Fix |
+|---|---|---|---|
+| 1 | Each TCP packet is parsed as one message ([2.1](#21-messages-lost-when-a-tcp-packet-holds-more-than-one)) | Keypad disarms lost (2 of 3 in a test), leading to **6 false "Triggered" alarms in 2 minutes** | Split the stream into lines |
+| 2 | Alarms inferred from zone activity ([2.2](#22-zone-inferred-alarms-misfire-on-every-normal-entry)) | False alarm on every normal entry through the entry route | Use the panel's own alarm message (`"L`) |
+| 3 | UDL login never logged out ([2.3](#23-every-command-from-homekit-blacks-out-the-panel-for-60-s)) | Every arm/disarm from HomeKit silences **all** panel events for ~60 s; a real alarm reached HomeKit 65 s late | Binary logout `03 48 B4` (cuts it to ~30 s) |
+| 4 | 2 s command timeout; commands from different sources interleave ([2.4](#24-commands-interleave-and-the-timeout-is-too-short)) | Duplicate logins on every arm; `OK`s credited to the wrong command | A command queue and an 8 s login timeout |
+| 5 | Areas reset to Disarmed on restart ([2.5](#25-areas-show-disarmed-after-every-restart)) | Wrong state, possibly for hours | Persist the state, and ask the panel (`ASTATUS`) on connect |
+| 6 | `string` dependency ([2.10](#210-dependencies)) | High-severity advisory, no fix available | Remove it |
 
-1. problems your beta already fixes, for reference;
-2. **problems still present in `4.4.0-beta.1`**, with evidence and a small suggested patch against *your* code for each. The most serious, lost keypad disarms causing false alarms in HomeKit, is first;
-3. a restructured reference version ("v5", in this branch) that implements all of the fixes with tests, in case you want to adopt some or all of it;
-4. what other Texecom projects do differently, and what's worth copying (section 6).
+### What the fork adds
 
-**Biggest strategic point:** most users will connect through a **repurposed SmartCom**. That already works with this plugin when the SmartCom's COM port is switched to "Crestron System" (confirmed by the tester; your README asks about it), at the cost of the official app and easy Wintex access. Supporting the **Texecom Connect protocol** as well would let SmartCom owners keep the module in its normal mode, get much richer data, and avoid the post-command event blackout found in 2.0b. See 6.4.
+- **Texecom Connect support** ([4.1](#41-texecom-connect-support)): works with a SmartCom left in its normal mode, which is how most users own their hardware. Zones and areas are found automatically, arm modes are exact, and there's no blackout after HomeKit commands.
+- **Crestron improvements** ([4.2](#42-crestron-improvements)): the exact part arm for Night/Home, a regular status check that catches missed events and dead links, and fixes for problems found on the real panel.
+- **Choice of arm buttons in the Home app** ([4.3](#43-choosing-the-home-app-arm-buttons)), and a **settings page and README rewritten for end users** ([4.4](#44-settings-page-and-readme)).
 
-**The suggested route for the existing Crestron code is small patches against your beta, not merging v5 wholesale.** v5 uses a different accessory UUID scheme, so adopting it as-is would orphan existing users' accessories (see section 1).
-
-Everything marked *Reproduced* was run against your beta branch using real Homebridge (1.11.4) and a fake COM-IP panel. The panel is included as [`tools/fake-panel.js`](../tools/fake-panel.js), so you can repeat the tests.
-
-Items marked **Confirmed on real hardware** were observed on a user's live installation: your published `4.4.0-beta.1`, Homebridge 2.4.0, Node 24, Docker on a Raspberry Pi, and a Premier Elite 24 (firmware V6.05.03). The panel's **Com Port 3 is set to "Crestron System"** and is bridged to the network by a **Wemos D1 (ESP8266) running ESP Easy Mega's "Communication - Serial Server" (ser2net)** on TCP port 23 (19200 8N1), not an official Texecom ComIP. Com Port 1 is a SmartCom. The bridge's **RX Receive Timeout is 200 ms**: it buffers serial bytes until the line has been quiet for 200 ms, then sends them as one TCP packet. That is why messages the panel sends close together (for example `"U0030` + `"D0013`) arrived in one chunk, and it adds up to ~200 ms latency per message. A ComIP may coalesce less often, but TCP never guarantees message boundaries, so the line-framing fix (2.1) applies to any IP connection. Users of serial-to-TCP bridges can lower that timeout (for example to ~20 ms) for faster updates once framing is handled. The plugin's own `debug` log was the only instrumentation; no packet capture was used.
-
----
-
-## 1. Already fixed in your beta
-
-| Problem in 4.3.0 | Fixed in your beta | v5 equivalent |
-|---|---|---|
-| First HomeKit arm/disarm ignored (`setByAlarm` never cleared) | 4.3.1-beta.0 (#26) | `lib/areaAccessory.js` |
-| Accessories published as external accessories | 4.3.1-beta.0, plus the `external_accessories` opt-in for 4.3.0 installs | `lib/platform.js` |
-| Accessories not cached, stale ones not removed | 4.3.1-beta.0 | `lib/platform.js` |
-| Areas matched by position in the config, so a missing or reordered area crashes | 4.3.1-beta.0 | `lib/platform.js` |
-| Retry timer not cleared after `OK`, so a second login is sent | 4.3.1-beta.0 | `lib/connection.js` |
-| Area bitmask wrong for areas 5–8 | 4.3.1-beta.2 | `lib/protocol.js` |
-| Area 8 bitmask sent as two bytes | 4.4.0-beta.1 | `lib/protocol.js` |
-| `engines.homebridge` excluded 1.x | 4.3.1-beta.0 | `package.json` |
-| Unused `crypto-js` | 4.3.1-beta.0 | `package.json` |
-
-**Things in your beta that should be kept whatever is adopted from v5:**
-
-- **UUIDs compatible with 4.2.8 (`Texecom:<name>`) and 4.3.0.** v5 uses a new scheme, `homebridge-texecom-full:zone:7`, which would make every existing user re-pair and rebuild their automations. That part of v5 should **not** be adopted.
-- **Configurable `remote_users` / `default_arm_state`** (#25). v5 uses the same config keys and the same order of checks (remote user, then the HomeKit request, then the default).
-- **User numbers above 99.** v5 parses them the same way as your regex.
-- **Combined areas and panel clock sync.**
+**Suggested route:** small patches against your code for section 2, keeping your accessory identities; Connect as a self-contained addition. See [section 5](#5-suggested-route).
 
 ---
 
-## 2. Still present in `4.4.0-beta.1`
+## 2. Bugs in 4.4.0
 
-### 2.0 Real-world impact: lost keypad disarms cause false alarms in HomeKit (*Confirmed on real hardware*)
+Most serious first.
 
-This is the most serious finding, and it combines 2.1 with the zone-trigger behaviour described below. The tester ran three keypad tests on `4.4.0-beta.1`: arm then disarm; arm, walk in, disarm during the entry delay; arm, walk in and let the alarm sound, then disarm. Afterwards they reported that **"the HomeKit notifications throughout that exercise were well off"**. The debug log shows why:
+### 2.1 Messages lost when a TCP packet holds more than one
 
-- The panel sends "user entered code" and "disarmed" a fraction of a second apart, so they often arrive in **one** TCP chunk: `"U0030\r\n"D0013\r\n`. Because of 2.1, the beta processed the `U` and **dropped the disarm, twice out of three times**.
-- `areas_armed` therefore still contained area 1. For the rest of the session, every hallway or kitchen movement produced `Area 001 manual triggered`: **six false "alarm triggered" states in two minutes** while the panel was disarmed.
-- HomeKit was left showing **Triggered** until Homebridge was restarted.
+*Reproduced, and confirmed on the real panel.*
 
-The whole session, with the original TCP chunking, is in [`test/fixtures/real-session-2026-10-06.json`](../test/fixtures/real-session-2026-10-06.json). `node tools/replay-panel.js test/fixtures/real-session-2026-10-06.json` replays it to any build. Replayed against both versions:
+**What happens.** `setupConnection()` (lines 349–354) passes each TCP `data` chunk to `processData()`, which parses only its start. TCP has no message boundaries, and the panel often sends events close together, so one chunk can hold several lines. Every line after the first is dropped. A chunk such as `"Z0071\r\nOK\r\n` also fails the `trim() === 'OK'` check, so the command times out and is resent. Serial users aren't affected: that path already uses `ReadlineParser`.
 
-| | 4.4.0-beta.1 | v5 |
+**Evidence.** In a minute of walking past sensors, 3 of 23 chunks held more than one message, losing 5 zone events. In a keypad test, "code entered" and "disarmed" (`"U0030` + `"D0013`) arrived together, and **2 of 3 disarms were lost**. The plugin still believed the area was armed, so every movement afterwards raised `Area 001 manual triggered`: **6 false alarms in 2 minutes**, with HomeKit left on Triggered. The session, with its original chunking, is in [`test/fixtures/real-session-2026-10-06.json`](../test/fixtures/real-session-2026-10-06.json), and [`tools/replay-panel.js`](../tools/replay-panel.js) replays it to any build:
+
+| | 4.4.0 | Fork |
 |---|---|---|
 | Keypad disarms seen | 1 of 3 | 3 of 3 |
-| False "triggered" states | 6 | 0 |
-| Real alarm (`"L0010`) shown | yes | yes |
-| Final HomeKit state | **Triggered** (panel was disarmed) | Disarmed |
+| False "Triggered" | 6 | 0 |
+| Final HomeKit state | **Triggered** (panel disarmed) | Disarmed |
 
-`test/real-session.test.js` runs the same replay through v5 as an automated test.
-
-**Zone-inferred alarms misfire on every normal homecoming, even with 2.1 fixed.** When an away-armed area has a zone go active, the beta marks the area as triggered (`manual triggered`). But walking in through the entry route *is* a zone going active while armed. The panel sends `"E0010` (entry delay), you disarm, and nothing is wrong. At 15:32:22 the beta would have raised a false alarm here if that zone message hadn't been lost in the same chunk as the `E`. The panel reports real alarms itself, and gets them right. In the third test the tester came in through the hallway, which is on the entry route, so the panel sent `"E0010` (entry delay). He then walked into the kitchen, which isn't, so the panel sent `"L0010` (full alarm) at 15:33:02 and reported the kitchen zone a second later. Only the panel knows which zones are entry routes and which are immediate. The plugin can't, so any inference from zone activity will be wrong one way or the other. **Suggestion:** rely on `L`, and make zone inference opt-in for panels that don't send `L`. If it is kept, it should ignore activity between `E` and the following `D`/`L`. v5 does both (`trigger_from_zones`, default off). The trade-off of that guard: on a panel that *doesn't* send `L`, walking from an entry-route zone into an immediate zone during the entry delay wouldn't be shown. That's one more reason to rely on `L` wherever the panel provides it.
-
-**Messages your panel sends that the plugin doesn't yet recognise** (all confirmed by the tester's test sequence; user 3 is their code):
-
-| Message | Meaning |
-|---|---|
-| `"U0030` | User 003 entered a code at a keypad |
-| `"X0010` | Area 001 exit delay started |
-| `"E0010` | Area 001 entry delay started |
-| `"A0013` / `"D0013` | Area 001 armed / disarmed by user 3 (user number is variable width, as your regex already allows) |
-| `"L0010` | Area 001 alarm |
-
-`X` could drive HomeKit's "Arming…" display: set the target state while the current state stays disarmed. `E` could give an "entry delay" notification.
-
-
-They're listed most severe first. Line numbers refer to `index.js` on `4.4.0-beta.0` at `674be7c`.
-
-### 2.0b After arming or disarming from HomeKit, the panel holds back all events for about 60 seconds (*Confirmed on real hardware*)
-
-Found by running texecom2mqtt (Connect protocol, via a SmartCom) alongside the plugin (Crestron, via the COM-IP) on the same panel, so every event could be checked against an independent feed.
-
-The plugin logs in with `\W<udl>/` before each command and never logs out. While that UDL session is open, **the panel sends nothing on the Crestron port**: no zone changes, no arm or disarm events, no alarms. When the session times out, about 60 seconds after the last command, everything held back arrives in one burst.
-
-From the test on 6 Oct (UK time). Arms and disarms were made from the Home app; the kitchen is a Guard zone included in Part Arm 1:
-
-| Time | HomeKit command | Connect feed (live) | Crestron feed (plugin) |
-|---|---|---|---|
-| 17:53:33 | Night → panel Part Arm 1 | In Exit, then Part Armed 1 | `OK`, `OK`, then **silence** |
-| 17:54:13 | Off | Disarmed | `OK`, `OK` |
-| 17:54:42 | Home → panel Part Arm 1 | In Exit, then Part Armed 1 | `OK`, `OK` |
-| 17:55:05 | | **Kitchen in alarm, bell active** | (nothing) |
-| 17:55:08 | Off | Disarmed | `OK`, `OK` |
-| 17:53:33–17:56:08 | | 12 zone changes | **0 zone changes** |
-| 17:56:08–17:56:17 | | | burst: `"X0010`, `"A00129`, `"D0010`, `"X0010`, `"A00129`, **`"L0010`**, `"D0010` and the held zone messages |
-
-The alarm reached HomeKit **65 seconds late**, and every motion sensor was frozen for 2½ minutes. The same pattern explains an earlier unexplained burst at 15:24:20, which arrived 59 seconds after a test arm/disarm. The beta's clock sync also logs in, so each sync would cause the same 60-second blackout.
-
-**Isolated with [`tools/crestron-logout-probe.py`](../tools/crestron-logout-probe.py)**, which logs in and tries to log out without arming anything, with texecom2mqtt as an independent feed:
-
-| Time | Probe | Crestron feed | Connect feed |
-|---|---|---|---|
-| 18:02:51–18:03:02 | not logged in | 8 zone changes, live | same |
-| 18:03:03 | `\W<udl>/` | **no reply; feed goes silent** | zone changes continue |
-| 18:03:26 | `\H/` (TexecomManager's log-out) | **`ERROR`; still silent** | zone changes continue |
-| 18:04:27 | | **burst of everything held**, 61 s after the last command | |
-
-- **Any command over the Crestron port starts a ~60 s blackout, and each further command restarts it.** Even the rejected `\H/` did.
-- **`\H/` doesn't end the session on this panel** (firmware V6.05.03), so TexecomManager's log-out doesn't apply here.
-- **Events are delayed, not lost.** The burst contained everything, in order. With line framing fixed (2.1), the final state is right but up to a minute late.
-
-**Options:**
-1. **Arm and disarm with Crestron keypad emulation instead of the UDL.** TexecomManager sends virtual keypresses (`KEY<digit>`, `KEYY`, `KEYD`, `KEYR`) with a user code and reads the screen with `LSTATUS`, so no UDL session is opened. **Tested on the V6.05.03 panel with [`tools/crestron-keypad-probe.py`](../tools/crestron-keypad-probe.py): not accepted as-is.** A valid user code (it works on the physical keypad) was sent as `KEY<digit>` lines with TexecomManager's 500 ms spacing. There was no `"U` login message, and `LSTATUS` still showed the idle screen 3 s later. Whether a panel setting (for example a keypad slot for the Crestron port) enables it is still open.
-2. **Mitigate:** after any command, mark zone states as possibly stale for 60 s, and when the burst arrives, process it in order (2.1). `ASTATUS` **can't** be used to confirm the result during the blackout (see below).
-
-**Why it happens** ([`tools/crestron-astatus-during-login.py`](../tools/crestron-astatus-during-login.py)). After `\W<udl>/`, the port stops speaking text. `ASTATUS` and `LSTATUS` sent during the blackout were each answered with the binary frame `03 0F ED`. That is **Wintex framing** as documented in [pialarm's wintex-protocol.md](https://github.com/shuckc/pialarm/blob/master/protocol/wintex-protocol.md): a length byte, then a type, then the checksum `0xFF - sum` (`FF - 03 - 0F = ED`). So the UDL login switches the port into a Wintex/UDL session, and the 60 s is that session's idle timeout. Text queries don't extend it: the burst came 60.7 s after the login and 35 s after the last `ASTATUS`. Framed `\…/` commands do extend it, as the rejected `\H/` showed. The Wintex logout is message type `H`, which as a frame is `03 48 B4`.
-
-**Binary logout: confirmed it halves the blackout** ([`tools/crestron-binary-logout-probe.py`](../tools/crestron-binary-logout-probe.py), two runs, no Wintex session open, sensors moving throughout):
-
-| | Run 1 | Run 2 |
-|---|---|---|
-| Logout `03 48 B4` sent | 10 s after login | 2 s after login |
-| Panel reply | `03 06 F6` (Wintex ACK) | `03 06 F6` |
-| Text feed resumed (held events replayed in order) | **30.7 s** after logout | **30.9 s** after logout |
-
-**Rule:** without a logout, the feed is silent until about 60 s after the last framed command. With the binary logout, it's silent until about 30 s after the logout. Nothing is lost either way.
-
-**Recommended:** send `03 48 B4` straight after each command sequence (arm/disarm, and clock sync). That cuts the blackout from ~60 s to ~30 s for one byte-triple. Two things to handle:
-- The ACK `03 06 F6` arrives on the same stream **without a line terminator**, so it gets glued to the front of the next text line (for example `\x03\x06\xf6"Z0011`). The line parser must drop a valid Wintex frame (`[len][type]…[checksum]`, where `sum & 0xFF == 0xFF`) before parsing text, or the next zone event is lost.
-- Don't treat "no `OK` to `\W<udl>/`" as failure on its own. In the probes the login was never acknowledged with text `OK`, yet the session clearly opened (the binary replies and the blackout prove it). The plugin's arm commands did get `OK`s, so it's worth checking which command those `OK`s actually answer.
-3. **Two modules:** send commands through a second module (for example a SmartCom using the Connect protocol) and keep the Crestron port for live events. Only suits installs that have both. **Supporting evidence:** a UDL session on a *different* port doesn't silence the Crestron port. During a 4-minute Wintex session through the SmartCom (17:44–17:48), the Crestron feed kept reporting zone changes live. Wintex's Online Keypad also armed and disarmed with a user code through that session, so remote keypresses are possible over UDL/Connect, just not over the Crestron port (see option 1).
-4. In all cases, **avoid unnecessary logins.** The beta's clock sync logs in on a schedule, and each sync costs a 60 s blackout. `LSTATUS` already shows the panel time without logging in (6.2), which allows a drift check that only logs in when a correction is actually needed.
-
-**Verified in the plugin on real hardware** ([`tools/hotfix-4.4.0-beta.1-v2.py`](../tools/hotfix-4.4.0-beta.1-v2.py) applied to your 4.4.0-beta.1: logout after each command plus the frame filter). Night then Off from the Home app, with sensors moving throughout and texecom2mqtt as the reference:
-
-| | Night (arm) | Off (disarm) |
-|---|---|---|
-| Home app pressed | 19:37:57 | 19:39:04 |
-| Panel state (Connect) | In Exit 19:38:05, Part Armed 1 19:38:15 | Disarmed 19:39:11 |
-| Logout sent | 19:38:05 | 19:39:12 |
-| Crestron feed resumes | **19:38:36** (+31 s) | **19:39:43** (+31 s) |
-| Held messages | `"X0010`, `"A00129` + 4 zone changes, all processed | `"D0010` + 4 zone changes, all processed |
-| HomeKit result | Night (via the HomeKit request, user 29) | Disarmed |
-
-HomeKit is blind for **~39 s per command**, down from ~68 s, and nothing is lost. The ACK never reached the parser. The login took **6 s** to be acknowledged this time (3 s earlier in the day), so a command timeout of **~8 s** is safer than 5 s.
-
-**The ~30 s after logout is a fixed panel timer; polling doesn't shorten it** ([`tools/crestron-post-logout-poll.py`](../tools/crestron-post-logout-poll.py)). After the logout ACK, `ASTATUS` was sent every 2 s. All 15 replies were the binary `03 0F ED` until **31 s after the logout**, when the held events and then a normal `"NN` came back. The panel's Wintex settings show no UDL or remote-session timer to adjust (only "Remote Arm Instant", option 58, which is why remote arms set after the 8 s exit settle time instead of the area's 15 s exit delay). Polling does give a precise **"back online" signal**: the first text reply. After a command, the plugin could poll quietly and confirm the true state with `ASTATUS` at that moment. Removing the blind spot entirely needs a command path that doesn't open a UDL session: keypad emulation (option 1 above) or a second module (option 3).
-
-Also visible in the burst: the panel reports arms made through the Crestron interface as **user 29**, and remote disarms as **user 0**. Your `app_users` / `remote_users` settings exist for this, but the defaults (25/254) don't match this panel.
-
-### 2.1 IP connection: messages lost when TCP packets contain more than one line (*Reproduced*)
-
-**Where:** `setupConnection()`, lines 349–354. Each TCP `data` chunk goes straight to `processData()`, which trims it and parses only the start.
-
-**Why it matters:** TCP has no message boundaries. When the panel sends events close together, several lines arrive in one chunk, and one line can also be split across two chunks. With a COM-IP:
-
-- Every zone or area event after the first in a chunk is dropped.
-- A chunk such as `"Z0071\r\nOK\r\n` fails the `trim() === 'OK'` check in `writeCommandAndWaitForOK`. The command times out and is resent.
-
-Serial users aren't affected, because the serial path already goes through `ReadlineParser`.
-
-**Reproduction:** the fake panel sent `"Z0071\r\n"Z0151\r\n` in a single write. On your beta, *Living Room* went active but *Front Door* stayed closed. On v5, both updated.
-
-**Confirmed on real hardware (6 Oct 2026).** In about a minute of walking past sensors, **3 of 23 TCP chunks from the COM-IP carried more than one message**. Every message after the first in each chunk was dropped, which lost 5 zone events:
-
-| Chunk (from `IP data received:` debug lines) | Processed | Lost |
-|---|---|---|
-| `"X0010` `"Z0051` `"Z0011` `"Z0050` | `"X0010` (logged as unknown) | Landing active, Hallway active, Landing clear |
-| `"Z0011` `"Z0031` | Hallway active | Kitchen active |
-| `"U0030` `"Z0010` | `"U0030` (logged as unknown) | Hallway clear, so Hallway showed motion until its next event |
-
-This is the most user-visible issue in the list: motion automations and alerts silently miss events on IP installs.
-
-**Suggested patch:** run the socket through the same `ReadlineParser` the serial path uses, but keep the raw stream for the clock reader. `serialport` v12 already exports `ReadlineParser`, so `@serialport/parser-readline` can be dropped as well.
+**Fix.** Run the socket through the same `ReadlineParser` as the serial path (`serialport` v12 exports it, so `@serialport/parser-readline` can go):
 
 ```js
-// setupConnection()
 const { ReadlineParser } = require('serialport');
-
-var connection = net.createConnection(platform.ip_port, platform.ip_address);
+const connection = net.createConnection(platform.ip_port, platform.ip_address);
 connection.setNoDelay(true);
-connection.setKeepAlive(true, 30000);          // see 2.6
-
+connection.setKeepAlive(true, 30000);
 const lines = connection.pipe(new ReadlineParser({ delimiter: '\n' }));
-
 connection.on('data', (data) => responseEmitter.emit('raw', data));   // clock reader
-lines.on('data', (line) => {
-    platform.log.debug(`IP data received: ${line}`);
-    responseEmitter.emit('data', line);
-    processData(line);
-});
+lines.on('data', (line) => { responseEmitter.emit('data', line); processData(line); });
 ```
 
-### 2.2 Commands from different sources interleave (*Reproduced*)
+After a UDL session the stream also carries binary frames with no line ending (see [2.3](#23-every-command-from-homekit-blacks-out-the-panel-for-60-s)). Drop any valid frame (`[len][type]…[checksum]`, byte sum `& 0xFF == 0xFF`) before splitting lines, or the next message is lost.
 
-**Where:** `areaTargetSecurityStateSet()` (line 842) and `_syncPanelClock()` (line 466). Both call `writeCommandAndWaitForOK` independently, and every waiting call accepts the first `OK` from anyone.
+### 2.2 Zone-inferred alarms misfire on every normal entry
 
-**Why it matters:** if HomeKit arms two areas at once (a scene, or a combined area plus one of its members), or the clock sync runs while someone arms, the panel receives `W…, W…, A…, A…`. The first `OK` resolves *both* waiting promises, so each command's result can be credited to the other. If one command fails, the other can still be reported as successful.
+*Confirmed on the real panel.*
 
-**Confirmed on real hardware: the panel is slower than the 2-second timeout.** Arming area 1 from HomeKit on a real COM-IP gave:
+**What happens.** When a zone in an away-armed area goes active, the plugin marks the area Triggered. But walking in through the entry route is exactly that: a zone going active while armed. The panel starts the entry delay (`"E0010`) and you disarm. Only the panel knows which zones are entry routes, and it reports real alarms itself (`"L0010`), correctly. In the test, the hallway (entry route) gave `"E`, and walking on into the kitchen (immediate) gave `"L`.
 
-```
-15:23:07  Sending command 1 to area 001      (W<udl> written)
-15:23:10  IP data received: OK               3 s after the login was written
-15:23:12  IP data received: OK               reply to the arm command
-```
+**Fix.** Use `"L` for Triggered. Make zone inference opt-in for panels that don't send `L`, and ignore activity between `"E` and the following `"D`/`"L`. The fork does both (`trigger_from_zones`, off by default).
 
-The login's 2-second timer had already expired and resent it before the first `OK` arrived. So every arm on this installation probably sends a duplicate login, and an `OK` can arrive while a *different* command is waiting. "Probably" because the beta doesn't log retries, so this is inferred from the timing. That makes the mis-matching described above a realistic risk rather than a theoretical one. Suggest raising the timeout to around 5 s, and logging retries at debug level.
+### 2.3 Every command from HomeKit blacks out the panel for ~60 s
 
-**Reproduction:** two areas were armed in one HomeKit write. Your beta sent `W0123, W0123, A\x01, A\x20`. v5 sent `W0123, A\x01, W0123, A\x20`. Your beta only succeeded because the fake panel acknowledges everything.
+*Confirmed on the real panel, with Texecom Connect (via the SmartCom) as an independent reference feed.*
 
-**Suggested patch:** a module-level promise chain, so each "login + command" sequence runs as a unit:
+**What happens.** Each command starts with `\W<udl>/`, which switches the Crestron port into a Wintex/UDL session. While that session is open the port sends **nothing**: no zone changes, no arm events, no alarms. Everything is held and released in one burst when the session times out, about 60 s after the last command. Nothing is lost, but in one test a **real alarm reached HomeKit 65 s late** and all motion sensors were frozen for 2½ minutes. The clock sync logs in too, so each sync causes the same blackout.
+
+**Measured:**
+
+| | Feed silent for |
+|---|---|
+| No logout (4.4.0) | ~60 s after the last command |
+| Binary Wintex logout `03 48 B4` (answered `03 06 F6`) | ~30 s after the logout; a fixed panel timer that polling doesn't shorten |
+| `\H/` (TexecomManager's logout) | Answered `ERROR` on this firmware; no effect |
+| UDL session on a *different* port (e.g. Wintex via the SmartCom) | Not silent: the Crestron feed stays live |
+
+**Fix.** Send `03 48 B4` straight after each command sequence. Before parsing lines, drop the binary frames the session sends (the ACK arrives glued to the next text line). In the plugin, on the real panel, this cut HomeKit's blind spot from ~68 s to ~39 s per command, with every held message processed. Also avoid unnecessary logins: `LSTATUS` shows the panel clock without one, so the clock sync only needs to log in when it actually corrects the time. Removing the blind spot entirely needs a path without a UDL session, which is what Texecom Connect gives ([4.1](#41-texecom-connect-support)).
+
+### 2.4 Commands interleave, and the timeout is too short
+
+*Reproduced; timing confirmed on the real panel.*
+
+**What happens.** `areaTargetSecurityStateSet()` (line 842) and `_syncPanelClock()` (line 466) call `writeCommandAndWaitForOK` independently, and any waiting call accepts the first `OK`. Two arms at once (a scene, or a combined area plus a member) send `W…, W…, A…, A…`, and each result can be credited to the other. The panel also took **3–6 s** to answer a login, so the 2 s timer resends it every time. On this panel the login often isn't answered with `OK` at all, although the session opens.
+
+**Fix.** Run each "login + command" sequence as one unit on a promise chain, and allow ~8 s for the login:
 
 ```js
 let commandChain = Promise.resolve();
 function exclusive(task) {
     const run = commandChain.then(task);
-    commandChain = run.catch(() => {});   // keep the chain alive after a failure
+    commandChain = run.catch(() => {});
     return run;
 }
-
-// areaTargetSecurityStateSet():
-exclusive(() => writeCommandAndWaitForOK(platform.texecomConnection, `W${platform.udl}`)
-    .then(() => writeCommandAndWaitForOK(platform.texecomConnection, command)))
-    .then(() => { /* existing success handling */ })
-
-// _syncPanelClock(): wrap the login + T? read, and separately the login + set.
+exclusive(() => writeCommandAndWaitForOK(conn, `W${platform.udl}`)
+    .then(() => writeCommandAndWaitForOK(conn, command)));
 ```
 
-### 2.3 Errors are not logged unless debug is on
+Don't treat a missing `OK` to the login as failure on its own; the command that follows tells you whether the session opened.
 
-**Where:** `util/logutil.js`.
+### 2.5 Areas show Disarmed after every restart
 
-- `error()` only prints when `isDebug` is true. Connection errors, out-of-range areas and unknown target states are therefore invisible in a normal log.
-- The constructor's `this.log = log` replaces the class's own `log()` method, so the timestamp/prefix code never runs. `platform.log.log(...)` actually calls Homebridge's logger directly. It works, but by accident.
-- `debug()` writes with `console.log`, outside Homebridge's logger, so it ignores child-bridge prefixes and log levels.
+**What happens.** `setupServices()` (line 760) sets every area to Disarmed on start. If Homebridge restarts while the house is armed, HomeKit shows Disarmed until the next panel event, and "when disarmed" automations can fire.
 
-**Suggested patch:** replace `LogUtil` with a thin wrapper around the Homebridge logger. The plugin's own `debug` option can still promote debug lines to info.
+**Fix.** Keep the last state in `hapAccessory.context` (saved in Homebridge's accessory cache), and send `ASTATUS` on connect: the panel answers `"YN` (one letter per area, Y = armed) without a login.
 
-```js
-function createLogger(log, debugEnabled) {
-    return {
-        log:   (...a) => log.info(...a),   // keeps existing platform.log.log() calls working
-        info:  (...a) => log.info(...a),
-        warn:  (...a) => log.warn(...a),
-        error: (...a) => log.error(...a),
-        debug: debugEnabled ? (m, ...a) => log.info(`[debug] ${m}`, ...a)
-                            : (...a) => log.debug(...a),
-    };
-}
-```
+### 2.6 Errors aren't logged unless debug is on
 
-### 2.4 An area without `area_type` becomes a motion sensor (*Reproduced*)
+`util/logutil.js`: `error()` only prints when debug is on, so connection errors and rejected commands are invisible. The constructor's `this.log = log` also replaces the class's own `log()`, and `debug()` writes with `console.log`, outside Homebridge's logger. **Fix:** a thin wrapper around the Homebridge logger, with the plugin's `debug` option promoting debug lines to info.
 
-**Where:** `TexecomAccessory`, line 625: `config["zone_type"] || config["area_type"] || "motion"`.
+### 2.7 An area without `area_type` becomes a motion sensor
 
-**Why it matters:** the README's per-area table says `area_type` defaults to `"securitysystem"`. An area entry without it (the schema doesn't require it) is published as a **motion sensor**.
+*Reproduced.* Line 625: `config["zone_type"] || config["area_type"] || "motion"`. The schema doesn't require `area_type`, and the README says it defaults to `securitysystem`. **Fix:** decide by kind: `this.kind === "area" ? "securitysystem" : (config["zone_type"] || "motion")`.
 
-**Suggested patch:** set `kind` at the call site, which you already pass, and use it:
+### 2.8 Connection resilience
 
-```js
-this.zone_type = this.kind === "area" ? "securitysystem" : (config["zone_type"] || "motion");
-```
+- **Serial never reconnects** if the adapter disconnects or is missing at boot.
+- **No TCP keep-alive**, so a silently dropped connection isn't noticed: `setKeepAlive(true, 30000)`.
+- **No `shutdown` handler** to close the socket and clear timers.
+- **A live TCP link doesn't prove the panel is answering.** A serial-to-network adapter can stay connected after its serial side fails. A periodic `ASTATUS` (the fork uses 60 s) catches that, and also corrects HomeKit after any missed event.
 
-### 2.5 Areas show "Disarmed" after every restart
+### 2.9 Dwell timers can stack
 
-**Where:** `setupServices()`, line 760: `changeAction(DISARMED)` runs on every start.
+Lines 790–791 start a new dwell timer without clearing the previous one, so a zone toggling quickly can be marked clear while active. **Fix:** `clearTimeout` before starting a new one.
 
-**Why it matters:** if Homebridge restarts while the house is armed, HomeKit shows disarmed until the next panel event, which could be hours away. "When disarmed" automations can also fire falsely. `areas_armed` (used for zone-triggered alarms) is lost too, so an intrusion right after a restart doesn't show as triggered.
-
-**Suggested patch:** keep the last state in `hapAccessory.context`, which Homebridge saves in its accessory cache.
-
-```js
-const ctx = hapAccessory.context;
-changeAction(ctx.lastState ?? Characteristic.SecuritySystemCurrentState.DISARMED);
-// in changeAction():   ctx.lastState = newState; platform.api.updatePlatformAccessories([hapAccessory]);
-// (and the same for the area's entry in areas_armed)
-```
-
-v5 does this in `lib/areaAccessory.js`. In testing, the restored state was reported correctly after a restart.
-
-### 2.6 Connection resilience
-
-- **Serial never reconnects.** If the USB adapter disconnects, or isn't present at boot, the plugin stays offline until Homebridge restarts. v5 reopens the port with exponential back-off (`lib/connection.js`).
-- **TCP has no keep-alive.** COM-IP and NAT devices drop idle sockets silently, and without keep-alive the plugin may not notice. Add `connection.setKeepAlive(true, 30000)`.
-- **Reconnect delay is a fixed 10 seconds,** which is fine but noisy during long outages. v5 starts at 5 seconds and doubles up to 60.
-- **No `shutdown` handler.** Add `api.on('shutdown', …)` to close the socket or port and clear the reconnect timer, so Homebridge restarts cleanly.
-
-### 2.7 Dwell timers can stack
-
-**Where:** `changeHandler`, lines 790–791. A new dwell timer is started without clearing the previous one. With a zone that goes active, clear, active, clear quickly, the first timer can mark the zone clear while it is actually active.
-
-```js
-if (me.dwell_timer) clearTimeout(me.dwell_timer);
-if (!newState && me.dwell_time > 0) { me.dwell_timer = setTimeout(...); } else { changeAction(newState); }
-```
-
-### 2.8 Dependencies
+### 2.10 Dependencies
 
 | Package | Issue | Suggestion |
 |---|---|---|
-| `string` | **High-severity advisory, no fix available** ([GHSA-g36h-6r4f-3mqp](https://github.com/advisories/GHSA-g36h-6r4f-3mqp), regex DoS). Range `>=3.3.3` is unbounded. Flagged by `npm audit` on your beta. | Replace with `startsWith` / `slice` / a regex, as you already do for area messages. |
-| `zpad` | Unmaintained since 2022 | `String(n).padStart(3, '0')` |
-| `debug` | Imported (line 1) but never used | Remove |
-| `@serialport/parser-readline` | `serialport` v12 already exports `ReadlineParser` | Remove |
-| `engines.node` `>=18.20.4` | Node 18 is end-of-life | `^20.18.0 \|\| ^22.10.0 \|\| ^24.0.0` (Homebridge's supported set) |
+| `string` | High-severity advisory with no fix ([GHSA-g36h-6r4f-3mqp](https://github.com/advisories/GHSA-g36h-6r4f-3mqp)); unbounded range `>=3.3.3` | Replace with `startsWith` / `slice` |
+| `zpad` | Unmaintained | `String(n).padStart(3, '0')` |
+| `debug` | Imported, never used | Remove |
+| `@serialport/parser-readline` | `serialport` v12 exports `ReadlineParser` | Remove |
+| `engines.node` `>=18.20.4` | Node 18 is end-of-life | `^20.18.0 \|\| ^22.10.0 \|\| ^24.0.0` |
 
-### 2.9 Config schema
+### 2.11 Settings page
 
-- **`udl` is `"type": "integer"`,** so a UDL of `0123` is saved as `123` and the panel rejects the login. `minLength`/`maxLength` don't apply to integers. Suggest `"type": "string", "pattern": "^[0-9]{4,6}$"`, and `String(config.udl)` in code so existing numeric configs still work.
-- **`headerDisplay` says "Official Texecom Homebridge plugin".** Texecom doesn't publish it, so this may cause trademark or verification problems.
-- **Type mismatch:** `zone_number` and `area_number` are strings, but an area's `zones` are integers. The code copes, but the UI is inconsistent.
+- **`udl` is an integer**, so `0123` is saved as `123` and the login fails. Make it a string (`"pattern": "^[0-9]{4,8}$"`) and use `String(config.udl)` so existing configs still work.
+- **Numbers with both a minimum and a maximum render as sliders** in the Homebridge UI, so `time_sync_interval` (0–744) is a slider with no visible value. Drop the maximum, or set the layout type to `number`.
+- **`headerDisplay` says "Official Texecom Homebridge plugin"**, but Texecom doesn't publish it.
 
-### 2.10 Smaller items
+### 2.12 Smaller items
 
-- `onSet` rejects with a plain `Error`. HAP-NodeJS turns that into a communication failure but logs a warning as if the plugin had crashed. Throwing `new api.hap.HapStatusError(api.hap.HAPStatus.SERVICE_COMMUNICATION_FAILURE)` is the intended way to report it.
-- Zone and area messages are handled inside the `data` event with no `try/catch`. Any unexpected exception, such as an odd message, would crash the whole Homebridge process. A `try/catch` around `processData` costs nothing.
-- Accessory Information says Manufacturer "Homebridge". "Texecom" is more accurate. Changing it doesn't affect identity.
-
----
-
-## 3. Proposals that need checking against real hardware
-
-These are in v5 but are **not verified on a panel**, and are worth checking before relying on them.
-
-- **Tamper reporting.** v5 sets HomeKit `StatusTampered` when a zone status digit is anything other than `0` or `1`. TexecomManager confirms `2` is tamper (section 6.1), but tamper hasn't been triggered on the test panel.
-- **Arm state shown immediately after `OK`.** Both your beta and v5 show the target state as soon as the panel acknowledges, rather than waiting for the arm event after the exit delay. This matches the existing behaviour and is unchanged.
+- **Messages not recognised:** the panel also sends `"U` (user code entered), `"X` (exit delay started), `"E` (entry delay) and `"L` (alarm); see [3.1](#31-crestron-messages). `"X` can drive the Home app's "Arming…".
+- **User numbers:** this panel reports HomeKit arms as **user 29** and remote disarms as **user 0**. The `app_users` / `remote_users` defaults (25, 254) don't match, which supports keeping them configurable.
+- `onSet` rejects with a plain `Error`; `throw new HapStatusError(HAPStatus.SERVICE_COMMUNICATION_FAILURE)` is the intended way.
+- No `try/catch` around `processData`, so one odd message can crash Homebridge.
+- Manufacturer shows as "Homebridge"; "Texecom" is more accurate.
 
 ---
 
-## 4. Suggested route
+## 3. How the panel behaves
 
-If any of section 2 is useful, the least disruptive way to bring it in is **one small pull request per item against your `4.4.0-beta` branch**, using the patches above, rather than merging the v5 restructure. Each one is easy to review and revert. Separate branches for each can be prepared on request.
+Confirmed on the V6.05.03 panel unless stated.
 
-The v5 structure (section 5) is there as a reference if you ever want to split `index.js` into modules and add tests. The protocol and connection tests in `test/` would carry over with little change.
+### 3.1 Crestron messages
 
----
-
-## 5. How the v5 version is organised
-
-```
-index.js                 Entry point: registers the platform, nothing else
-lib/settings.js          PLUGIN_NAME / PLATFORM_NAME / defaults
-lib/platform.js          Dynamic platform: cache restore, config validation, accessory
-                         reconciliation, routing panel messages to accessories, shutdown
-lib/connection.js        TCP or serial transport, line framing, reconnect with back-off,
-                         TCP keep-alive, serialised command queue (sendCommands), Wintex
-                         logout after UDL commands, ASTATUS on connect and every 60 s
-                         (status_poll_interval), reconnect after three unanswered polls
-lib/protocol.js          Pure functions: parseLine() (incl. U/X/E and the ASTATUS reply),
-                         LineSplitter (drops Wintex binary frames), areaBitmask(),
-                         encodeCommand(). No I/O, so fully unit-testable
-lib/connect/, lib/connectPanel.js   Texecom Connect transport (section 7)
-lib/zoneAccessory.js     One zone → one HomeKit sensor, dwell timer, tamper
-lib/areaAccessory.js     One area → HomeKit SecuritySystem, onSet → panel commands,
-                         state persisted in accessory.context
-test/                    node:test unit tests (protocol parsing, line framing, bitmask,
-                         command queue against a local TCP server, and a replay of the
-                         real panel session through the platform with real HAP)
-tools/fake-panel.js      Fake COM-IP panel for manual end-to-end testing
-tools/replay-panel.js    Replays a recorded session (with original TCP chunking) to any build
-tools/hotfix-4.4.0-beta.1.py
-                         Stop-gap for installed 4.4.0-beta.1: line framing, 5 s timeout,
-                         clears area zone lists (disables zone-inferred alarms)
-eslint.config.js         ESLint 9 flat config
-```
-
-**Data flow:** the transport produces bytes, `LineSplitter` turns them into lines, `connection` emits `'line'`, and `platform.handleLine()` calls `parseLine()`, then `ZoneAccessory.update()` or `AreaAccessory.handlePanelEvent()`, then `updateValue()`.
-
-**Command flow:** HomeKit calls `onSet`. `AreaAccessory.setTargetState()` then calls `connection.sendCommands(['W<udl>', 'A<mask>'])`. That call joins the queue, writes each command and waits for `OK` or `ERROR` with a 2-second timeout and one retry. When it resolves, HomeKit gets the new state; when it rejects, HomeKit gets a `HapStatusError`.
-
-**Adding a feature in this structure:**
-
-- *New panel message:* add a case to `parseLine()` with a test, then handle it in `platform.handleLine()`.
-- *New zone type:* add an entry to `ZONE_TYPES` in `lib/zoneAccessory.js` and to the `zone_type` list in `config.schema.json`.
-- *New command (for example clock set):* call `connection.sendCommands([...])`. Queueing, retry and `OK` matching are handled for you. Binary payloads go through `encodeCommand()`, which uses latin1, so every byte is sent as one byte.
-
-**Running the checks:**
-
-```bash
-npm install
-npm run lint
-npm test
-node tools/fake-panel.js          # then point a test Homebridge at 127.0.0.1:10001
-```
-
----
-
-## 6. Learning from other Texecom projects
-
-Several other open-source projects talk to Texecom panels. Two use the same Crestron/Simple protocols as this plugin; others use the richer, binary **Texecom Connect** protocol. Reviewed:
-
-- **[texecom2mqtt](https://github.com/dchesterton/texecom2mqtt-hassio)** (Daniel Chesterton): Connect protocol, MQTT and Home Assistant. Its source repository isn't public, so this review used the code bundled in the published Docker image (1.3.1).
-- **[TexecomManager](https://github.com/JumpMaster/TexecomManager)** (JumpMaster): Crestron plus Simple Protocol over serial.
-- **[pialarm](https://github.com/shuckc/pialarm/blob/master/protocol/readme.md)** (Chris Shucksmith): Simple Protocol traces, credited in this plugin's README.
-- Also relevant, not reviewed in depth: [davidMbrooke/texecom-connect](https://github.com/davidMbrooke/texecom-connect) (the original Connect protocol reverse-engineering) and [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect), an existing Homebridge plugin built on the Connect protocol.
-
-### 6.1 Protocol details confirmed by other implementations
-
-TexecomManager independently confirms the message meanings observed on the real panel in section 2.0, and adds a few:
-
-| Message | Meaning | Source |
-|---|---|---|
-| `"Z` + zone + `0`/`1`/`2` | zone **healthy / active / tamper** | TexecomManager (also observed: 0 and 1) |
-| `"U0` + user | user logged in with a PIN | TexecomManager, observed |
-| `"T0` + user | user logged in with a **prox tag** | TexecomManager |
-| `"X0`, `"E0`, `"L0` | exit delay / entry delay / intruder alarm | TexecomManager, observed |
-| `ERROR` | command rejected | TexecomManager |
-
-So **zone status `2` is tamper**, which removes the uncertainty in section 3: v5's `StatusTampered` mapping is right. The beta currently treats `2` as "not active" and ignores it.
-
-### 6.2 Querying state instead of assuming it
-
-All three projects **ask the panel for the current state** rather than waiting for the next event:
-
-- **Crestron:** `ASTATUS` (sent as a line, `ASTATUS\r\n`) returns `"Y…` (armed) or `"N…` (disarmed), and `LSTATUS` returns the keypad screen text. TexecomManager uses these to confirm the result after arming or disarming.
-- **Simple Protocol:** `\Z<first-1><count>/` returns the state of a range of zones, `\I/` the panel model and firmware, and `\H/` logs out.
-- **Connect (texecom2mqtt):** after every connect it logs in, reads every zone's state and every area's flags (armed, part-armed level, in alarm), and only then subscribes to events. It re-reads area state after events that don't produce an area message: arm failed, auto-arm, end of installer programming.
-
-**Confirmed on real hardware** (Premier Elite with two areas, COM-IP in Crestron mode, disarmed), using [`tools/crestron-status-probe.py`](../tools/crestron-status-probe.py):
-
-```
-ASTATUS  ->  "NN\r\n
-LSTATUS  ->  "      HOME      17:29.48 Tue 06 \r\n
-```
-
-`ASTATUS` returns one letter per area (`N` = not armed). Both areas were disarmed, so the per-area reading still needs confirming with an area armed (expected `"YN`). No login was needed for either query. `LSTATUS` returns the keypad display exactly, including the panel clock, which gives a free clock-drift check without the UDL.
-
-**Suggestion:** on connect and reconnect, send `ASTATUS` to set the true armed state. That replaces the "assume disarmed" start-up (2.5) properly, which is better than v5's cache: a cache can't know what changed while Homebridge was down. `ASTATUS` doesn't say *which* arm mode (full or part), so `default_arm_state` is still needed for that.
-
-### 6.3 Patterns worth copying
-
-| Pattern | texecom2mqtt | This plugin (beta) |
-|---|---|---|
-| Message framing | Buffers bytes and parses complete, length-prefixed, CRC-checked messages, looping when several arrive together | Parses each TCP chunk as one message (2.1) |
-| One command in flight | Queue; next command only after the reply (or timeout) | Commands can interleave (2.2) |
-| Reply matching | Sequence number per command; replies for unknown sequences are logged and ignored | Any `OK` resolves any waiting command (2.2) |
-| Timeout / retries | 3.5 s × 5 attempts | 2 s × 2 (the test panel needed 3 s, 2.2) |
-| Liveness | TCP keep-alive (10 s), socket idle timeout (60 s) → reconnect, plus an application poll every 30 s | No keep-alive; a silently dropped COM-IP isn't detected (2.6) |
-| Disarm while in alarm | Sends **reset** first, then disarm | Disarm only |
-| Change arm mode | Disarms, then arms in the new mode | Sends the new arm command directly |
-| Start-up | Reads full state, then subscribes | Assumes disarmed (2.5) |
-
-A periodic `ASTATUS` (confirmed to work, 6.2) would give this plugin the same application-level heartbeat and keep HomeKit's state honest. **Implemented in this branch** (6.8).
-
-### 6.4 Crestron vs Connect
-
-The Connect protocol reports things Crestron can't: **which** part-arm (1/2/3) was used, explicit "in exit" and "in entry" states (HomeKit's "Arming…"), zone names and area membership straight from the panel, fault, masked and bypassed flags, power supply readings, and the full event log. It needs a Premier Elite on v4+ firmware with a ComIP, ComWifi or SmartCom, and like Crestron it takes over that connection (only one app per module).
-
-**Most users will only have a SmartCom,** and the realistic path for most people is to **repurpose it**. Your README asks whether the plugin works through a SmartCom ("let us know if you get it working"). **It does:** the tester previously ran this plugin through their SmartCom with its COM port switched to "Crestron System", using the ComIP method from the README. The cost was losing the **official Texecom app**, and **Wintex through the SmartCom** became awkward. That's why the test system now has a separate ESP8266 bridge for Crestron and leaves the SmartCom in SmartCom mode. The README could say this explicitly. It's probably the most common setup, and everything in section 2 applies to it.
-
-The alternative for SmartCom owners is **Connect protocol support**, which leaves the SmartCom in its normal mode. The trade-offs, as observed:
-
-| | SmartCom in Crestron mode (this plugin today) | SmartCom in SmartCom mode, Connect protocol (texecom2mqtt-style) |
-|---|---|---|
-| Official Texecom app | lost | also blocked while connected (per texecom2mqtt docs) |
-| Wintex via the SmartCom | awkward (tester's experience) | **worked alongside** texecom2mqtt on the test panel |
-| Blind spot after HomeKit arm/disarm | ~60 s (~30 s with logout, 2.0b) | none expected (commands are acknowledged in-protocol) |
-| Detail available | zone/area events only | zone names and types, part-arm level, entry/exit, last alarm zone, power, event log |
-| Reliability seen | steady | stalled 1–2 min after alarms (6.5) | It also removes the UDL-session blackout (2.0b) entirely, because Connect arm/disarm commands are acknowledged in-protocol and don't silence the event feed. The trade-offs seen on the test panel: the Connect session stalled for 1–2 minutes after alarms (6.5), and Wintex was able to connect through the same SmartCom at the same time as texecom2mqtt. Existing Connect implementations to learn from: texecom2mqtt (reviewed above), davidMbrooke/texecom-connect, and garethflowers/homebridge-texecom-connect.
-
-### 6.5 Side by side on the same panel
-
-On 6 Oct texecom2mqtt (Connect, via the SmartCom) and the plugin (Crestron, via the COM-IP) ran together on the test panel, a Premier Elite 24 on firmware V6.05.03 with one area in use and five zones: Hallway as Entry/Exit 1, the rest Guard. Findings:
-
-- **Zones:** identical on both feeds, normally within the same second, except during the post-login blackout in 2.0b.
-- **Message mapping:** `"U` = User Code; `"X` = In Exit / Exit Started; `"A` = Armed ("Open/Close (Away Armed)"); `"L` = In Alarm + Bell Active; `"E` = In Entry; `"D` = Disarmed ("Open After Alarm (Alarm Abort)" after an alarm).
-- **What Crestron can't tell you:** which zone caused an alarm (Connect: "last active zone: Kitchen"), which part arm was used (Connect: "Remote Part Arm 1"), and engineer activity (Wintex sessions show as Installer Programming and Download start/end; Crestron only shows `"U0000`, user 0).
-- **HomeKit Night and Home both arm Part Arm 1.** The Crestron `Y` command can't reach Part Arm 2 or 3.
-- **Connect isn't more reliable.** After each alarm and disarm, texecom2mqtt's commands timed out for 1–2 minutes. It reconnected repeatedly, twice reporting a corrupt response starting `0x41` (`A`), and missed a whole keypad arm and disarm. Crestron kept reporting throughout, apart from the blackout in 2.0b. **Explained:** the texecom-connect README notes that while a program is connected, the module can't send events to the Texecom apps "except for when an alarm occurs, in which case the connection to this program will be forcibly dropped by the panel". The drop is deliberate. It is how the alarm push notification gets out (and it did reach the tester's phone). A Connect client should treat it as expected: reconnect, then re-read the full state.
-- Connect also reported an undocumented area state `6` straight after "Part Armed 1".
-- **User numbers:** the panel's own event log (5 years of history read from Wintex) only contains users 0 (engineer), 1, 3 and 4. So `"A00129` ("user 29") is a pseudo-user for arms made through the UDL/Crestron interface, not a real user slot. Remote arms and disarms are logged as user 0. These values aren't standard across panels, which supports keeping `app_users` / `remote_users` configurable.
-- **Wintex's saved event log** (`Customers/<name>.tlf`, under the Windows VirtualStore) is easy to read: 9-byte records of `[type][group][parameter][areas LE16][Unix time LE32]`, with types matching the Connect protocol's log event numbers. Event type **137** (parameters 100 and 102, group 9) appears during engineer programming and isn't in texecom2mqtt's list.
-
-### 6.6 Fork survey (October 2026)
-
-Every fork of the related projects was compared with its parent. Only a few have changes worth knowing about:
-
-| Fork | Last update | What it adds | Use here |
-|---|---|---|---|
-| [southseaboy/texecom-connect](https://github.com/southseaboy/texecom-connect) (Apache-2.0) | Sep 2026 | The most active Connect work, with tests. Arm/disarm **as a user** (commands 29/30). Bulk area-flag reads refused on Elite 48 V4.02.01. Full list of the 73 area flag names. Alarm-end and exit-error handling. Inferring a missed arm/disarm log record | Flag names and the short-read fallback adopted (section 7). Our 30 s state re-read covers the alarm-end and exit-error cases |
-| [Sjoerdfc/texecom-connect](https://github.com/Sjoerdfc/texecom-connect) (Apache-2.0) | Aug 2026 | Idle-time state re-read; `GET_ZONE_CHANGES` NAKed by some firmware | Keep-alive design adopted |
-| mpredfearn, lodesmets (texecom-connect) | 2020, 2025 | Part-arm support, Home Assistant fixes | Superseded by the above |
-| chip1967, anthonyangel (texecom-connect) | 2019–2021 | MQTT/service tweaks; `GET_LCD_DISPLAY` as keep-alive | Nothing new |
-| [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect) (MIT) | 2024 release, dependency bumps since | Despite the name it uses **Crestron**, and arms by **keypad emulation**: `KEY<digit>` per code digit, 500 ms apart, **with no line terminator** | See below |
-| texecom2mqtt-hassio forks (srkrunner, dizlem-org, dkboldPers) | 2025–2026 | Packaging only (e.g. `libatomic1` in the image) | None |
-| homebridge-texecom forks (other than this one) | 2019–2026 | Nothing beyond upstream | None |
-
-**Two facts from southseaboy worth knowing whatever transport you use:**
-- **An ACK isn't proof.** On their panel, a disarm by an "arm only" user was ACKed but not carried out, with no log event. The only reliable evidence of the result is the area state that follows.
-- **The panel never reports an alarm ending** (no area event, even after an engineer reset), and an arm that fails in the exit delay sends no area event either. A client has to re-read the area flags, which the keep-alive here does every 30 s.
-
-**Keypad emulation, revisited:** this plugin's `KEY<digit>` test (6.2, section 2.0b option 1) sent each key with CR LF, as TexecomManager does, and the panel ignored it. garethflowers' published plugin sends keys **without** a line terminator. That is untested on the V6.05.03 panel. `tools/crestron-keypad-probe.py --no-crlf` is ready for a supervised test, since entering a valid code may arm the panel.
-
-### 6.7 Wider GitHub search (October 2026)
-
-A search for Texecom projects on GitHub (about 35 repositories) found two more that matter:
-
-**[michaelmarconi/texecom_alarm](https://github.com/michaelmarconi/texecom_alarm)** (MIT, started August 2026, about 20k lines including extensive tests): a Connect → MQTT → Home Assistant add-on built from independent real-panel observation (Elite 88, V6.02.02). Its "spike" reports corroborate several findings here and add some new ones:
-- **State reads and keep-alives can be refused with a 1-byte NAK** right after a burst of unsolicited events. Taken as data, `0x15` reads as "zone 1 active and alarmed", or as "area in alarm" on a single-flag read. **Fixed in this branch:** NAK replies are now transient, with no state change and no reconnect. Their own first fix over-corrected into a reconnect storm.
-- Area event states **6 and 7 look like "settled in Part Arm 1/2"**. 6 is exactly what the test panel sent after "Part Armed 1".
-- **On a SmartCom shared with the Texecom app or monitoring, the panel drops the link at alarm time** with Hayes `ATH0`/`ATZ`; a dedicated ComIP stays connected. That explains texecom2mqtt's "corrupt response 0x41" (the `A` of `ATH0`). Disarming during an alarm through a shared SmartCom can fail.
-- An idle connection hangs after ~60 s without a keep-alive (confirmed).
-
-**[shuckc/pytexalarm](https://github.com/shuckc/pytexalarm)** (MIT, maintained, built **without** the NDA): speaks the **UDL/Wintex** protocol, which is what the Crestron port switches to after `\W<udl>/`. It can read and decode the panel's whole configuration (zones, types, areas, users) and impersonate a panel for Wintex. **Opportunity:** a Crestron-mode plugin could read zone names, types and area membership over UDL at start-up (costing one ~30 s event blackout), the same automatic discovery the Connect mode has. Note that its full config dump includes user codes, so a plugin should read only the zone and area ranges. Its README also warns that a SmartCom in *monitor mode* blocks UDL from the local network.
-
-Others checked, with nothing to adopt: ESP32/ESPHome components (UDL polling; one is for Premier International panels), a Go port of texecom2mqtt (no licence), ARC/SIA receivers, and older Home Assistant integrations.
-
-### 6.8 Second GitHub search: projects updated in 2026 (October 2026)
-
-A fuzzy search (repository names, descriptions and READMEs for *texecom*, *premier elite*, *wintex*, *smartcom*, *comip* and similar, plus a code search for protocol strings such as `ASTATUS` and `GET_AREA_FLAGS`) turned up about 330 repositories. Fifteen are about Texecom panels and were updated in 2026. Those already covered in 6.6 and 6.7 have nothing new since. The rest:
-
-| Project | Licence | What it is | Use here |
-|---|---|---|---|
-| [ricol99/casa](https://github.com/ricol99/casa) (`src/things/alarmtexecom.js`) | MIT (declared in package.json; no LICENSE file) | Home automation hub. Arms, part-arms and disarms a Premier Elite over the **binary UDL protocol**, and receives events by acting as the panel's **alarm receiving centre** (SIA / Contact ID over IP, with the panel's `POLL` heartbeat) | Protocol facts only (below); no code copied |
-| [GoosieZA/esphome-texecom](https://github.com/GoosieZA/esphome-texecom) (`docs/PROTOCOL.md`) | MIT | ESPHome component for Premier **International** (412/816/832) over UDL: zones, arm, disarm | Confirms the UDL framing; documents how International differs from Elite |
-| [Prinsessen/openhab-texecom-bridge](https://github.com/Prinsessen/openhab-texecom-bridge) | MIT | openHAB rules for a Premier Elite in Crestron mode through a serial-to-UDP converter. In production | `ASTATUS` every 60 s with a "last received" watchdog (adopted); arms by keypad emulation (below) |
-| [dxnphillips/scouthut-alarmnotification](https://github.com/dxnphillips/scouthut-alarmnotification) | MIT | Home Assistant alerting layer on top of texecom2mqtt (escalation, fire zones, liveness) | The "bridge up, panel silent" failure mode (adopted) |
-| [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect) | MIT | 2026 commits are dependency updates. An unmerged branch (Oct 2025) replaces keypad arming with a `\W<code>/` UDL login | Nothing new |
-| mr-miles/texecom-esp32-homeassistant | none | ESP32 serial bridge for Wintex on a Premier 24; protocol decoding not started | Nothing yet |
-| SCWPretorius/ESPHome | none | Simple Protocol polling over serial (Premier 832), monitoring only | Nothing new |
-| jd710313/texecom-power-reset | none | Hardware: a relay board to power-cycle a panel remotely | Not software |
-
-**Binary UDL arm and part-arm commands (casa, cross-checked against pytexalarm's Wintex captures).** Inside a UDL session the panel accepts short binary commands, framed like the logout in 2.0b (`[len][cmd][payload][checksum]`, the checksum makes the byte sum `0xFF`), each acknowledged with `03 06 F6`:
-
-| Command | Frame (area 1) | Effect |
-|---|---|---|
-| Full arm | `04 41 00 BA` (`A`, area 0) | Full arm |
-| Part arm *n* | `05 53 00 0n cs` (`S`, area 0, part arm *n*) | Part Arm 1, 2 or 3 |
-| Disarm | `04 44 00 B7` (`D`, area 0) | Disarm |
-
-The Crestron path's `\Y` command can only reach Part Arm 1 (6.5). After `\W<udl>/` the Crestron port is already in a binary UDL session (2.0b), so sending `S 00 0n` there instead of `\Y` gives Crestron mode the exact part-arm choice Connect mode has.
-
-**Confirmed on real hardware** (Elite 24 V6.05.03, Crestron port, [`tools/crestron-udl-arm-test.py`](../tools/crestron-udl-arm-test.py), supervised):
-
-| Time | Sent / received |
+| Message | Meaning |
 |---|---|
-| 08:12:30 | `\W<udl>/` (no text `OK`, as usual on this panel) |
-| 08:12:38 → :39 | `05 53 00 01 A6` (Part Arm 1) → `03 06 F6`; logout `03 48 B4` → `03 06 F6`. Panel armed (keypad beep) |
-| 08:13:11 | feed resumes: `"X0010`, `"A00129` (remote user 29) |
-| 08:13:19 | `LSTATUS` → `" * PART ARMED * 08:12.38 Wed 07` |
-| 08:13:56 → 08:14:05 | `\W<udl>/`, `04 44 00 B7` (Disarm) → `03 06 F6`; logout → `03 06 F6` |
-| 08:14:36 – :53 | `"D0010` (remote user 0), `ASTATUS` → `"NN`, `LSTATUS` → `HOME` |
+| `"Z` + zone + `0` / `1` / `2` | Zone secure / active / tamper (`2` per TexecomManager) |
+| `"U` + user | Code entered at a keypad |
+| `"X` + area | Exit delay started |
+| `"E` + area | Entry delay started |
+| `"A` + area + user / `"D` + area + user | Armed / disarmed (user number is variable width) |
+| `"L` + area | Alarm |
+| `ASTATUS` → `"NN` | One letter per area, Y = armed. **No login needed** |
+| `LSTATUS` → `"      HOME      08:11.42 Wed 07` | The keypad screen, including the clock; shows `* PART ARMED *` while part-armed. **No login needed** |
 
-So the binary commands work inside the session the plugin already opens, with the same ~30 s blackout as the text commands. Part Arm 2/3 use the same frame with a different last payload byte (not tried: their zones aren't set up for testing on this panel). **`LSTATUS` shows `PART ARMED` while part-armed,** which lets Crestron mode tell a part arm from a full arm (for example after a keypad arm) without logging in. It doesn't say *which* part arm. As with Connect, an ACK isn't proof (6.6); GoosieZA notes the panel ACKs almost any well-formed frame, so the result should be taken from the events and `ASTATUS` that follow.
+The panel doesn't say whether an arm was full or part: `LSTATUS` can tell, but not which part arm.
 
-**End to end through HomeKit (7 Oct, test Homebridge 1.11.4 in Crestron mode via the ESP bridge, `night_part_arm: 1`).** Night from HomeKit armed Part Arm 1 (`"X0010`, `"A00129` once the feed resumed, keypad beep). Two bugs showed up and are fixed in this branch:
-- **HomeKit reported the arm as failed (HTTP 207, -70408) although the panel armed.** The login got no `OK`, so the plugin waited the full 8 s login timeout before sending the arm frame, and HomeKit gives up on a set request after about 9 s. The beta has the same exposure whenever the login is slow (2.2: 3–6 s measured, retried after 2 s). Fix: answer HomeKit at once; the target shows "Arming…" and the current state follows when the transaction ends, or the target is reverted and an error logged if it fails.
-- **The text disarm `\D` was answered `ERROR` twice** after a login that got no `OK`, while the binary disarm worked this morning in the same circumstances. When the panel doesn't acknowledge the login, the session seems to take binary commands only. Fix: each text command carries its binary equivalent (`A 00`, `S 00 01`, `D 00`, area 1) and falls back to it on `ERROR`. Text commands are no longer retried after an `ERROR`.
-- The panel was disarmed at the keypad (entry delay via the Hallway, `"U0030`, `"D0013`). The 60 s `ASTATUS` poll reported `"YN` at 08:42:26 and `"NN` at 08:43:27, independent of the events. **Repeat with the fixes (08:46):** Night answered HTTP 204 at once ("Arming…"); the login got no `OK` (8 s), the `S 00 01` frame was sent and HomeKit showed Night at 08:47:02. Off at 08:47:07: this time the login got `OK` in 2 s and the text `\D` got `OK`; HomeKit showed Disarmed at 08:47:10. After the blackout the panel released only `"X0010` (exit started), and the 60 s poll read `"NN`: the disarm landed inside the 8 s remote-arm settle, so the panel never reached the armed state. Both commands were carried out and the panel ended disarmed; the binary fallback wasn't needed this time (covered by unit tests). Note that in Crestron mode HomeKit shows the new state as soon as the panel accepts the command, ahead of the panel's own events, which arrive ~30 s later.
+### 3.2 The UDL session on the Crestron port
 
-**Live install (09:00, the fork running as the real plugin in the Pi's Homebridge 2.4, Crestron via the ESP bridge, `night_part_arm: 1`), Night held 20 s then Off:** HomeKit Night at 09:00:41, Off at 09:01:04; the panel's held events at 09:01:35 were `"X`, `"A` by user 29 and `"D` by user 0, so it armed fully and then disarmed. One cosmetic issue: by the time the burst arrived the disarm had cleared the pending Night, so the plugin briefly reported "armed (away)" before "disarmed", which can produce a stray Home app notification. **Fixed:** exit/arm events wait 500 ms and are replaced by a following event in the same burst; alarm and disarm events are applied at once (test verified to fail without the fix).
+- `\W<udl>/` opens a **binary Wintex/UDL session** (frames `[len][cmd][payload][checksum]`, byte sum `0xFF`; ACK `03 06 F6`, NAK `03 0F ED`). Text queries sent during it are answered with `03 0F ED`.
+- The login is often **not** answered with `OK`, but the session opens. When it isn't, text commands that follow may be answered `ERROR` while binary ones work.
+- **Binary commands work inside that session** (from [ricol99/casa](https://github.com/ricol99/casa) and [shuckc/pytexalarm](https://github.com/shuckc/pytexalarm); part arm and disarm confirmed here):
 
-**Elite vs International (GoosieZA):** International panels take the UDL code as raw digit values (`01 02 03 04`) and number areas from 1 (`A 01`). Elite panels take ASCII digits and, per casa and pytexalarm, area 0 for area A. Confirmed here for login only: the Elite 24 V6.05.03 accepted an ASCII UDL login through the SmartCom in normal mode and answered with its banner `Elite 24    V6.05.03`.
+| Command | Frame (area 1) |
+|---|---|
+| Full arm | `04 41 00 BA` |
+| Part arm *n* | `05 53 00 0n cs` (e.g. Part Arm 1: `05 53 00 01 A6`) |
+| Disarm | `04 44 00 B7` |
+| Logout | `03 48 B4` |
 
-**Status by memory address is firmware-specific.** casa reads part-arm flags from volatile memory at `0x0017B2`, and pytexalarm lists the clock (`0x003069`), area state (`0x0017B6`), armed flags (`0x0017C2`) and keypad text (`0x001196`) for an Elite 24 V4.02. On the V6.05.03 panel ([`tools/udl-status-probe.js`](../tools/udl-status-probe.js), read-only, disarmed) every one of those reads returned zeros, including the clock and keypad text, which can't be zero. The memory map has moved. A plugin shouldn't rely on fixed UDL addresses, and the same caution applies to reading zone/area config over UDL (6.7) unless the addresses are checked per firmware. Arm/disarm are commands, not addresses, so they're more likely to carry across firmware.
+  The Crestron `\Y` command only ever reaches Part Arm 1; `S 00 0n` reaches 1, 2 or 3.
+- **Keypad emulation (`KEY<digit>`) is ignored** on this firmware, with CR LF, LF or no line ending.
+- **Memory addresses are firmware-specific.** The status addresses pytexalarm and casa read on V4.02 (clock `0x003069`, area state `0x0017B6`…) return zeros on V6.05.03, so a plugin shouldn't read state by address.
+- An ACK isn't proof a command was carried out; take the result from the events and `ASTATUS` that follow.
 
-**Keypad emulation, two more data points.** The openHAB bridge, in production on a Premier Elite, sends `KEY<digit>` for each digit of a user code and then `KEYY` (YES), 500 ms apart, one UDP datagram per key with **no line ending**. Its first version sent each key with **LF only**. Both are described as working. This plugin's failed test used CR LF (6.6). **Retested on the V6.05.03 panel with LF only and with no line ending** (`tools/crestron-keypad-probe.py --lf` / `--no-crlf`, a valid user code, 500 ms per key): no reply, no `ERROR`, and the keypad and `LSTATUS` screen didn't change. Keypad emulation over the Crestron port isn't available on this firmware with any line ending; it presumably depends on panel firmware. The binary UDL commands above do work.
+### 3.3 Texecom Connect
 
-**Liveness: "bridge up, panel silent".** Texecom Alerts points out that a bridge can stay connected while nothing reaches the panel. Here that is a COM-IP or serial-to-IP converter whose serial side has failed: the TCP keep-alive (2.6) still succeeds and the plugin waits for ever. The openHAB bridge polls `ASTATUS` every 60 s and alarms when nothing has been received for a while. **Implemented in this branch** for Crestron mode:
-- `ASTATUS` every `status_poll_interval` seconds (default 60; 0 = only on connect). Skipped during a command transaction and during the post-logout blackout (2.0b), when the port only answers in binary.
-- No data for three poll intervals (not counting a blackout) → warning and reconnect.
-- The reply corrects a missed arm or disarm within a minute. That is the failure in 2.0 (lost keypad disarms), now covered even if a message is lost for some other reason.
-- A periodic "not armed" reply doesn't clear *Triggered*: the panel never reports an alarm ending (6.6), and an alarm can happen in a disarmed area (24-hour zones, tamper). Only the first reply after connecting clears it, as before.
-- An "Arming…" exit delay is unaffected: during the delay the panel still reports not armed, and HomeKit's current state is still Disarmed.
-- Tests (verified to fail without the change): polling keeps the link up while the panel answers; a silent panel triggers a reconnect; no poll during a blackout; a missed disarm is corrected and Triggered is kept.
+- **When an alarm is reported, the panel deliberately drops the Connect session** to send its own alarm notification (the Texecom app's push still arrives). A client must reconnect and re-read the state. On a SmartCom shared with the app, the drop comes as `ATH0`/`ATZ`.
+- The panel **never reports an alarm ending**, and an arm that fails in the exit delay sends no area event. Re-read the area flags periodically; the fork does it every 30 s, which also keeps the session alive (it drops after ~60 s idle).
+- State reads can be answered with a **1-byte NAK** just after a burst of events. Treat it as "try again", never as data (as data, `0x15` reads as "zone 1 active" or "area in alarm").
+- After "Part Armed 1" the panel sends an undocumented area state **6**, and a flag re-read straight after can still show the **exit flag**.
+- Bulk area-flag reads work here (72 bytes); some older firmware refuses them, so fall back to one flag at a time.
+- Wintex can connect through the same SmartCom while a Connect client is connected.
 
-**Alarm receiving centre as an event channel (casa).** A Premier Elite can report events over IP to a monitoring receiver (SIA or Contact ID, with a periodic `POLL` heartbeat carrying line-fail, AC-fail, battery-fail, armed and engineer flags). casa runs that receiver itself and only connects over UDL to send commands. It's an event feed that doesn't need the COM-IP held open. Setting it up means programming an ARC destination in the panel, so it's noted here as an option, not tested.
+### 3.4 HomeKit
 
-### 6.9 Offering only the arm modes a panel uses (October 2026)
-
-With Night and Home both mapped to Part Arm 1, the Home app offers two buttons that do the same thing. `homekit_modes` (e.g. `["away", "night"]`) sets `validValues` on the Security System's target state, so only those buttons plus Off are offered. **Found on a live install:** iOS ignores a change to `validValues` on an accessory it already knows. The bridge's configuration number went up, the Home app was force-quit and the Pi rebooted, and Home was still offered. The Home app reads the list only when it first sees the accessory. So a reduced set of modes gives the alarm its own UUID: changing `homekit_modes` brings the alarm back as a new accessory (room and automations set again), and the setup page says so. Confirmed: the new accessory offered only Off, Away and Night. The setup page now has an "Arm modes in the Home app" section that explains what each button does on the panel.
-
-### Credits
-
-Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect), Michael Marconi (texecom_alarm), Chris Shucksmith (pytexalarm), ricol99 (casa), GoosieZA (esphome-texecom), Prinsessen (openhab-texecom-bridge), dxnphillips (Texecom Alerts).
+- HomeKit gives up on a set request after about **9 s**, so answer `onSet` quickly and apply the outcome when the panel confirms.
+- iOS caches an alarm's `validValues` (the arm buttons) for an accessory it already knows; a change only shows on a new accessory.
 
 ---
 
-## 7. Texecom Connect support (implemented in this branch)
+## 4. What the fork adds, and why
 
-Because most users will repurpose a SmartCom (6.4), this branch adds a **Connect transport** alongside Crestron, selected with `"protocol": "connect"`. It's self-contained, so it can be lifted into your plugin independently of the rest of v5:
+### 4.1 Texecom Connect support
+
+**Why:** most users own a **SmartCom**. With Crestron they must switch its COM port over, which loses the Texecom app and its notifications. Connect uses the SmartCom as it is.
+
+| | Crestron | Connect |
+|---|---|---|
+| SmartCom | COM port switched to Crestron System | Left as it is |
+| Zones and areas | Listed in the config | Read from the panel, with names |
+| Arm mode in HomeKit | Guessed for keypad arms | Exact, from the panel |
+| After a HomeKit command | ~30 s blackout (with logout) | None |
+| Texecom app | Lost | Blocked while connected; alarm push still arrives |
+
+`"protocol": "connect"`. It's self-contained, so it can be taken without the rest of the fork:
 
 ```
-lib/connect/protocol.js   framing, CRC-8 (poly 0x85, init 0xFF), commands, message decoding
-lib/connect/client.js     TCP session: 2 s pre-login wait, login, event subscription,
-                          one command in flight, sequence-matched replies, 3.5 s x 5 retries,
-                          keep-alive every 30 s (the panel drops idle sessions after ~60 s),
-                          "+++" drop detection, reconnect with back-off
-lib/connectPanel.js       discovery (zones, types, area membership, area names), full
-                          state read on every (re)connect, part-arm tracking from log
-                          events, re-reads after Arm Failed / Auto Open-Close / unknown
-                          area state 6 / end of engineer programming, setMode() with
-                          reset-before-disarm and disarm-before-re-arm
-lib/connect/NOTICE        credits: texecom-connect (Apache-2.0, released with Texecom's
-                          approval) and texecom2mqtt (MIT, Daniel Chesterton)
+lib/connect/protocol.js   framing, CRC-8, commands, message decoding
+lib/connect/client.js     session: login, events, one command in flight, sequence-matched
+                          replies, retries, 30 s keep-alive, drop detection, reconnect
+lib/connectPanel.js       discovery, full state read on (re)connect, part-arm tracking,
+                          setMode() with reset-before-disarm and disarm-before-re-arm
+lib/connect/NOTICE        credits: texecom-connect (Apache-2.0), texecom2mqtt (MIT)
 ```
 
-The platform maps Connect area states to HomeKit as follows. Full arm is Away. Part Arm 1/2/3 use `part_arm_1`…`part_arm_3` (defaults night / stay / unused, as texecom2mqtt). "In exit" sets the target, so the Home app shows "Arming…". "In alarm" is Triggered. Zones and areas are discovered from the panel when the config lists none, and the accessory identities are the same as in Crestron mode, so switching transports keeps HomeKit setups.
+Part Arm 1/2/3 map to Home app modes with `part_arm_1`…`part_arm_3` (default Night / Home / unused). The exit delay shows "Arming…".
 
-**Testing so far:**
+### 4.2 Crestron improvements
 
-| | Status |
+- **All of section 2.**
+- **Exact part arm:** `night_part_arm` / `home_part_arm` send the binary `S 00 0n` instead of `\Y`. Unset keeps `\Y`.
+- **Status check every 60 s** (`ASTATUS`, `status_poll_interval`): corrects HomeKit after a missed event, and reconnects if the panel stops answering three times. A periodic "not armed" never clears Triggered, because the panel never reports an alarm ending.
+- **"Arming…"** from `"X`; **tamper** from zone status `2`.
+- **HomeKit answered at once**, outcome applied when the transaction ends (see 3.4).
+- **Binary fallback:** a text command answered `ERROR` is resent as its binary equivalent (see 3.2).
+- **Held events coalesced:** in the burst after a session, an arm followed by a disarm no longer flashes a stale "armed" state.
+
+### 4.3 Choosing the Home app arm buttons
+
+`homekit_modes` (e.g. `["away", "night"]`) offers only the buttons a panel uses. Many homes have just a full arm and one part arm, so otherwise Night and Home would do the same thing. Because iOS caches the buttons (3.4), a reduced set gives the alarm accessory its own identity.
+
+### 4.4 Settings page and README
+
+The settings page has four numbered sections, with plain-English help and a recommendation on every field. Fields that don't apply to the chosen protocol are hidden, and the problems in 2.11 are fixed. The [README](../README.md) is a step-by-step guide for SmartCom owners, with screenshots.
+
+### 4.5 Code layout and tests
+
+```
+lib/platform.js        platform: config, accessories, routing panel messages
+lib/connection.js      Crestron transport: line framing, reconnect, keep-alive, command
+                       queue, logout, status check
+lib/protocol.js        Crestron parsing and command encoding (pure, unit-tested)
+lib/areaAccessory.js   area → HomeKit Security System
+lib/zoneAccessory.js   zone → HomeKit sensor (dwell, tamper)
+lib/connect/, lib/connectPanel.js   Texecom Connect
+test/                  62 tests: parsing, framing, command queue, Connect client and
+                       platform, and a replay of the real panel session through real HAP
+tools/                 fake panels, session replay, probes used on the real panel
+```
+
+`npm install && npm run lint && npm test`. No panel needed.
+
+---
+
+## 5. Suggested route
+
+1. **Keep your accessory identities.** The fork uses a new UUID scheme (`homebridge-texecom-full:zone:7`), so adopting its accessory code as-is would make every user set up their Home app again. Also keep your configurable users (#25), combined areas and clock sync.
+2. **Take section 2 as small patches against your code**, most serious first: 2.1, 2.2, 2.3, 2.4, then the rest. Each is independent and easy to review. Separate branches can be prepared on request.
+3. **Consider Connect** as a second protocol, from the self-contained files in 4.1.
+4. The fork's structure and tests are there as a reference if you want them.
+
+---
+
+## 6. Testing done
+
+| Test | Result |
 |---|---|
-| Unit tests (framing, CRC, decoding, client retries/drops) and end-to-end tests with real HAP against a fake panel modelled on the test system: discovery, live zones and tamper, Night = Part Arm 1, Away, mode change, alarm during a session drop, reset-then-disarm, custom part-arm mapping, refused commands | passing |
-| Real panel, read-only (via SmartCom): login, panel ID, clock, power, keypad text, area/zone details, zone and area state reads, live zone events | **confirmed** |
-| Real panel, plugin in Connect mode in a test Homebridge: discovered 5 zones and area HOUSE, correct current states in HomeKit | **confirmed** |
-| Homebridge **2.4.0** (as on the test Pi) as well as 1.11: Connect against the fake panel (Arming… → Night → Disarmed, no warnings) and Crestron via the recorded real session (identical result, no warnings); accessory cache created under 1.x restored under 2.x | **confirmed** |
-| Real panel, unattended soak in Connect mode under Homebridge 2.4 (keep-alive = zone/area state re-read every 30 s idle) | running overnight; first ~5 min run under 1.11 had 0 drops |
-| Real panel: arm / disarm over Connect (7 Oct, supervised, [`tools/connect-arm-test.sh`](../tools/connect-arm-test.sh), Homebridge 1.11.4) | **Pass.** Night requested 08:35:33 → "Arming…" → panel Part Arm 1 at 08:35:42 (the 8 s remote-arm settle) → HomeKit Night. Off 08:35:49 → Disarmed in under a second, taken from the panel's area event; no blackout. **Bug found and fixed:** the flag re-read triggered by area state 6 a second after arming still had the exit flag set, so HomeKit's target flipped to Away for ~5 s. An exit flag on an already-armed area is now ignored (test verified to fail without the fix). Reset-before-disarm (alarm in progress) not exercised |
+| 4.4.0 vs the fork, fake panel and real-session replay | Bugs in section 2 reproduced on 4.4.0, fixed in the fork |
+| Fork as the live plugin on the real panel (Crestron, Homebridge 2.4) | Running day to day |
+| Crestron, HomeKit Night (binary Part Arm 1) held 20 s, then Off | Armed and disarmed, confirmed by the panel's own events |
+| Crestron, binary part arm and disarm with a probe tool | Both carried out |
+| Crestron, binary logout | Blackout ~60 s → ~30 s; HomeKit blind ~68 s → ~39 s per command |
+| Connect, read-only (login, discovery, states, live events) | Correct |
+| Connect, HomeKit Night then Off | Night in ~9 s (the panel's 8 s remote-arm settle), Off in under 1 s, no blackout |
+| Keypad arm, entry delay and keypad disarm | Seen correctly |
+| Homebridge 1.11 and 2.4 | Both |
+| Keypad emulation, UDL memory reads | Don't work on V6.05.03 (see 3.2) |
 
-**Cross-check:** the arm/disarm/reset and state-read layouts taken from texecom2mqtt match an independent, Apache-2.0 implementation in [Sjoerdfc/texecom-connect](https://github.com/Sjoerdfc/texecom-connect) (still maintained in 2026). Its idle-time re-read of zone and area state is the model for the keep-alive here. It also catches events lost during the panel's alarm-reporting drop. Its author reports that `GET_ZONE_CHANGES` (36) is sometimes NAKed by newer firmware, after which the panel stops responding, so this implementation re-reads with `GET_ZONE_STATE` (2) instead.
+Not yet exercised on the real panel: full arm (Away) from HomeKit, reset-then-disarm during an alarm over Connect, tamper.
+
+---
+
+## 7. Other projects and credits
+
+| Project | Licence | Used for |
+|---|---|---|
+| [texecom2mqtt](https://github.com/dchesterton/texecom2mqtt-hassio) | MIT | Connect protocol details; reference feed in testing |
+| [davidMbrooke/texecom-connect](https://github.com/davidMbrooke/texecom-connect) | Apache-2.0 | The original Connect reverse-engineering |
+| [Sjoerdfc](https://github.com/Sjoerdfc/texecom-connect) / [southseaboy](https://github.com/southseaboy/texecom-connect) forks | Apache-2.0 | Idle-time state re-read; all 73 area flags; short-read fallback; "an ACK isn't proof" |
+| [michaelmarconi/texecom_alarm](https://github.com/michaelmarconi/texecom_alarm) | MIT | NAK replies after event bursts; area states 6/7; drops at alarm time |
+| [JumpMaster/TexecomManager](https://github.com/JumpMaster/TexecomManager) | | Crestron messages, `ASTATUS`/`LSTATUS`, tamper status |
+| [shuckc/pytexalarm](https://github.com/shuckc/pytexalarm) / pialarm | MIT | Wintex/UDL framing, binary commands |
+| [ricol99/casa](https://github.com/ricol99/casa) | MIT (package.json) | Binary arm/part-arm/disarm commands |
+| [GoosieZA/esphome-texecom](https://github.com/GoosieZA/esphome-texecom) | MIT | UDL differences between Elite and International panels |
+| [Prinsessen/openhab-texecom-bridge](https://github.com/Prinsessen/openhab-texecom-bridge) | MIT | Periodic `ASTATUS` with a watchdog |
+| [dxnphillips/scouthut-alarmnotification](https://github.com/dxnphillips/scouthut-alarmnotification) | MIT | The "connected but panel silent" failure mode |
+| [garethflowers/homebridge-texecom-connect](https://github.com/garethflowers/homebridge-texecom-connect) | MIT | Keypad-emulation arming (not accepted by this panel) |
+
+Original plugin by Kieran Jones, maintained by Max Christian and Chris Posthumus. Protocol credits for the Connect code are in [lib/connect/NOTICE](../lib/connect/NOTICE).
