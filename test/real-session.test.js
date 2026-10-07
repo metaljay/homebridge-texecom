@@ -145,3 +145,21 @@ test('Crestron Night/Home use the configured part arm (binary S), else \\Y as be
     assert.deepEqual(sent, ['W1234', expected]);
   }
 });
+
+test('Connect: a stale exit flag re-read just after arming does not change the target', () => {
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, config, api);
+  api.emit('didFinishLaunching');
+  platform.connectPanel = { modeForPartArm: () => 'night' };
+  const area = platform.areas.get(1);
+  const Target = hap.Characteristic.SecuritySystemTargetState;
+  area.pendingTarget = Target.NIGHT_ARM;
+  area.applyConnectState({ state: 'in exit', partArm: null });
+  assert.equal(area.service.getCharacteristic(Target).value, Target.NIGHT_ARM);
+  area.applyConnectState({ state: 'part armed', partArm: 1 });
+  assert.equal(area.service.getCharacteristic(Current).value, Current.NIGHT_ARM);
+  // Real panel, 7 Oct: the flag re-read a second later still had the exit flag set.
+  area.applyConnectState({ state: 'in exit', partArm: null });
+  assert.equal(area.service.getCharacteristic(Target).value, Target.NIGHT_ARM);
+  assert.equal(area.service.getCharacteristic(Current).value, Current.NIGHT_ARM);
+});
