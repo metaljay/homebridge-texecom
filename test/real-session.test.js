@@ -212,3 +212,18 @@ test('a held-back burst (X, A, D) after a quick HomeKit disarm never shows the s
   await new Promise((r) => setTimeout(r, 120));
   assert.equal(area.service.getCharacteristic(Current).value, Current.AWAY_ARM);
 });
+
+test('homekit_modes hides arm modes from the Home app; Off is always offered', () => {
+  const Target = hap.Characteristic.SecuritySystemTargetState;
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, { ...config, homekit_modes: ['away', 'night'] }, api);
+  api.emit('didFinishLaunching');
+  const area = platform.areas.get(1);
+  const props = area.service.getCharacteristic(Target).props;
+  assert.deepEqual(props.validValues, [Target.AWAY_ARM, Target.NIGHT_ARM, Target.DISARM]);
+
+  const all = new TexecomPlatform(silentLog, config, createApi());
+  all.api.emit('didFinishLaunching');
+  assert.deepEqual(all.areas.get(1).service.getCharacteristic(Target).props.validValues,
+    [Target.STAY_ARM, Target.AWAY_ARM, Target.NIGHT_ARM, Target.DISARM]);
+});

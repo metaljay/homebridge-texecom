@@ -375,6 +375,20 @@
           "functionBody": "return model.protocol !== 'connect';"
         }
       },
+      "homekit_modes": {
+        "title": "Arm modes shown in the Home app",
+        "type": "array",
+        "uniqueItems": true,
+        "description": "Which arm modes the Home app offers (Off is always offered). Leave empty for all three. For example, choose Away and Night if Home would do the same as Night on your panel.",
+        "items": {
+          "type": "string",
+          "oneOf": [
+            { "title": "Away", "enum": ["away"] },
+            { "title": "Night", "enum": ["night"] },
+            { "title": "Home (Stay)", "enum": ["stay"] }
+          ]
+        }
+      },
       "status_poll_interval": {
         "title": "Status check (seconds)",
         "type": "integer",
@@ -466,6 +480,7 @@
         "part_arm_3",
         "time_sync_interval",
         "status_poll_interval",
+        "homekit_modes",
         "night_part_arm",
         "home_part_arm",
         "default_arm_state",
