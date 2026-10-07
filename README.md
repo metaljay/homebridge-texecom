@@ -35,18 +35,64 @@ Or turn the lights on when a detector sees movement:
    - a serial-to-network adapter on one of the panel's COM ports (for example an ESP8266 running ser2net), or
    - a USB-serial cable from the panel to the machine running Homebridge.
 
-## Step 1: choose a connection
+## Step 1: choose a protocol
 
-| | **Texecom Connect** | **Crestron** |
+Most people connect through their **SmartCom**: the small Texecom box next to the panel that the Texecom app uses. This plugin can talk to it in one of two ways, called **protocols**. This is the one decision you need to make; you pick it at the top of the plugin's settings.
+
+| Protocol | **Texecom Connect** (recommended) | **Crestron** |
 |---|---|---|
-| Use it if you have | A SmartCom or ComIP, left as it is | A panel COM port set to "Crestron System": through a ComIP, a SmartCom you've switched over, a serial-to-network adapter or a cable |
-| Changes to the panel | None | The COM port must be set to "Crestron System" ([how](#setting-up-the-panel)) |
-| Zones and areas | **Found automatically**, with their names | You list them |
-| Night / Home / Away in the Home app | Exactly what the panel set | Exact when armed from the Home app; arms from the keypad show as one mode you choose |
-| After you arm or disarm from the Home app | No delay | The panel holds back its other messages for about 30 seconds |
-| The Texecom app | Can't use the SmartCom while Homebridge is connected | Unaffected if it has its own SmartCom |
+| What you do to the SmartCom | Nothing: leave it as it is | Switch its COM port to "Crestron System" in the panel's engineer menu ([how](#setting-up-the-panel)) |
+| Texecom app | Can't connect while Homebridge is connected. Alarm notifications from the app still arrive | **Stops working**, including its notifications |
+| Zones and areas | Found automatically, with their names | You type them in |
+| Night / Home / Away in the Home app | Always the exact mode, however it was armed | Exact when armed from the Home app; arms from the keypad show as one mode you choose |
+| "Arming…" while the exit timer runs | Yes, until the panel has finished arming | From the keypad, yes; from the Home app it shows armed as soon as the panel accepts the command |
+| After arming or disarming from the Home app | No delay | Other updates are held back for about 30 seconds |
+| Track record | New in this fork; tested on a real panel | The method this plugin has always used |
 
-**Recommendation:** if you have a SmartCom and don't rely on the Texecom app, choose **Texecom Connect**. It's the least work and gives the most detail. Choose **Crestron** if you want to keep the Texecom app on its SmartCom and can add a second connection on another COM port (a ComIP or a serial-to-network adapter), or if you're already set up that way.
+### Texecom Connect
+
+**Pros**
+- Nothing to change on the panel or the SmartCom, and no installer visit.
+- Zones and areas are read from the panel, so there's almost nothing to type in.
+- The Home app always shows the exact arm mode, and shows "Arming…" during the exit timer.
+- Arm and disarm from the Home app take effect straight away, with no holding back of updates.
+- Wintex can still connect through the same SmartCom.
+
+**Cons and known limitations**
+- The Texecom app can't connect while Homebridge is connected. Its alarm notifications still reach your phone.
+- When the alarm goes off, the panel briefly drops the connection to send its own alarm notification. The plugin reconnects and catches up within seconds, but a disarm sent from the Home app in that moment may need repeating.
+- Needs a Premier Elite on firmware v4 or later (most are).
+- New: well tested on one real panel, but not yet on many.
+
+### Crestron
+
+**Pros**
+- The plugin's original method, used by its existing users for years.
+- A simple, steady connection; the panel keeps sending updates when the alarm goes off.
+
+**Cons and known limitations**
+- The Texecom app stops working, and with it the app's notifications, because the SmartCom is no longer working as a SmartCom. You'd rely on the Home app for notifications.
+- Someone has to change the COM port in the panel's engineer menu (you need the engineer code, or your installer).
+- You list your zones yourself, with their numbers.
+- Arms made at the keypad or with a keyfob show as one mode you choose, because the panel doesn't say which mode it was.
+- After you arm or disarm from the Home app, the panel holds back its other updates for about 30 seconds. Nothing is lost, but sensors update late during that time.
+
+### Recommendation
+
+- **You have a SmartCom and are happy to use the Home app instead of the Texecom app: choose Texecom Connect.** It's the least work and gives the best result.
+- **You want to keep the Texecom app working as well:** neither option keeps it fully. Connect blocks the app while Homebridge is connected but keeps its alarm notifications; Crestron loses the app entirely. So Connect is still the better choice.
+- **Already using this plugin with Crestron:** there's no need to change. The fixes in this fork apply to Crestron too.
+
+<details>
+<summary>Other ways to connect (need extra hardware)</summary>
+
+If you want to keep the Texecom app fully working on its SmartCom, you can add a second connection on a spare COM port of the panel, set to "Crestron System", and use the **Crestron** protocol through it:
+
+- a Texecom **ComIP** module;
+- a serial-to-network adapter, e.g. an ESP8266 running ser2net (for the technically minded);
+- a USB-serial cable from the panel to the machine running Homebridge.
+
+</details>
 
 ## Step 2: fill in the settings
 
@@ -56,7 +102,7 @@ In the Homebridge UI, open **Plugins**, find **Homebridge Texecom** and choose *
 
 <img src="docs/images/settings-1-connection.png" width="420" alt="Connection settings">
 
-1. **How does Homebridge reach your panel?** Your choice from step 1.
+1. **How does Homebridge reach your panel?** The protocol you chose in step 1.
 2. **IP address:** the SmartCom, ComIP or adapter's address. Find it in your router's list of connected devices, and reserve it there so it doesn't change.
 3. **Port:** **10001** for a SmartCom or ComIP. For a serial-to-network adapter, the port you set on it (often 23).
 4. **Serial port:** only for a USB-serial cable, e.g. `/dev/ttyUSB0`. Otherwise leave it blank.
