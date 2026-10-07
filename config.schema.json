@@ -355,6 +355,17 @@
           "functionBody": "return model.protocol === 'connect';"
         }
       },
+      "status_poll_interval": {
+        "title": "Status check (seconds)",
+        "type": "integer",
+        "default": 60,
+        "minimum": 0,
+        "maximum": 3600,
+        "description": "Crestron only: how often to ask the panel which areas are armed (ASTATUS). Corrects HomeKit after a missed arm/disarm event, and reconnects if the panel stops answering for three checks in a row. 0 = only after connecting.",
+        "condition": {
+          "functionBody": "return model.protocol !== 'connect';"
+        }
+      },
       "time_sync_interval": {
         "title": "Panel clock check (hours)",
         "type": "integer",
@@ -434,6 +445,7 @@
         "part_arm_2",
         "part_arm_3",
         "time_sync_interval",
+        "status_poll_interval",
         "default_arm_state",
         {
           "key": "remote_users",

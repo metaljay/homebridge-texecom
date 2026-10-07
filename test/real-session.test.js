@@ -105,3 +105,23 @@ test('exit delay ("X") shows Arming... in HomeKit until the panel reports armed'
   platform.handleLine('"A0013');
   assert.equal(area.service.getCharacteristic(Current).value, Current.AWAY_ARM);
 });
+
+test('periodic ASTATUS corrects a missed disarm but leaves Triggered alone', () => {
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, config, api);
+  api.emit('didFinishLaunching');
+  const area = platform.areas.get(1);
+  platform.handleLine('"A0013'); // armed at the keypad
+  assert.equal(area.service.getCharacteristic(Current).value, Current.AWAY_ARM);
+  platform.handleLine('"NN'); // the disarm event was lost; the poll reports not armed
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+
+  platform.handleLine('"L0010'); // alarm (e.g. a 24-hour zone in a disarmed area)
+  assert.equal(area.service.getCharacteristic(Current).value, Current.ALARM_TRIGGERED);
+  platform.handleLine('"NN');
+  assert.equal(area.service.getCharacteristic(Current).value, Current.ALARM_TRIGGERED);
+
+  platform.firstStatusPending = true; // as set on (re)connect
+  platform.handleLine('"NN');
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+});

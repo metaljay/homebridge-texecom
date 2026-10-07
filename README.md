@@ -172,6 +172,7 @@ This plugin is a platform plugin so you must configure each zone from your Texec
 | `protocol` | `"crestron"` | `"crestron"` or `"connect"` (see *Choosing a connection*) |
 | `part_arm_1` / `part_arm_2` / `part_arm_3` | `"night"` / `"stay"` / `""` | Connect only: how each part arm is shown in HomeKit (`night`, `stay`, `away`, or `""` for unused). HomeKit Night/Home arm the first part arm mapped to that mode |
 | `time_sync_interval` | 0 | Connect only: hours between panel clock checks; the clock is corrected if more than a minute out. 0 = off |
+| `status_poll_interval` | 60 | Crestron only: seconds between `ASTATUS` checks. Corrects HomeKit after a missed arm/disarm, and reconnects if the panel stops answering for three checks in a row (e.g. the serial side of an IP bridge has failed). 0 = only after connecting |
 | `debug` | false | Log every message received from the panel without enabling Homebridge-wide debug mode |
 
 ### Tamper reporting

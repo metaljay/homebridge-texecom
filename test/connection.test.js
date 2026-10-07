@@ -110,3 +110,77 @@ test('logs out (Wintex 03 48 B4) after a UDL transaction and holds queries durin
   conn.stop();
   panel.close();
 });
+
+/** Fake Crestron port that answers ASTATUS lines while `answering` is true. */
+async function startStatusPanel() {
+  const state = { answering: true, queries: 0 };
+  const sockets = new Set();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('close', () => sockets.delete(socket));
+    socket.on('data', (data) => {
+      for (const _match of data.toString('latin1').matchAll(/ASTATUS\r\n/g)) {
+        void _match;
+        state.queries++;
+        if (state.answering) {
+          socket.write('"NN\r\n');
+        }
+      }
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  state.port = server.address().port;
+  state.close = () => {
+    sockets.forEach((s) => s.destroy());
+    server.close();
+  };
+  return state;
+}
+
+test('polls ASTATUS while connected and stays connected while the panel answers', async () => {
+  const panel = await startStatusPanel();
+  const conn = new TexecomConnection({ log: silentLog, host: '127.0.0.1', port: panel.port, statusPollMs: 40 });
+  let disconnected = false;
+  conn.on('disconnected', () => {
+    disconnected = true;
+  });
+  const replies = [];
+  conn.on('line', (l) => replies.push(l));
+  conn.start();
+  await once(conn, 'connected');
+  await new Promise((r) => setTimeout(r, 300));
+  assert.ok(panel.queries >= 4, `expected several polls, got ${panel.queries}`);
+  assert.ok(replies.every((l) => l === '"NN'));
+  assert.equal(disconnected, false);
+  conn.stop();
+  panel.close();
+});
+
+test('reconnects when the panel stops answering (bridge up, panel silent)', { timeout: 5000 }, async () => {
+  const panel = await startStatusPanel();
+  panel.answering = false;
+  const warnings = [];
+  const log = { ...silentLog, warn: (m) => warnings.push(m) };
+  const conn = new TexecomConnection({ log, host: '127.0.0.1', port: panel.port, statusPollMs: 30 });
+  conn.start();
+  await once(conn, 'connected');
+  await once(conn, 'disconnected');
+  assert.ok(warnings.some((m) => /No reply from the panel/.test(m)));
+  conn.stop();
+  panel.close();
+});
+
+test('no ASTATUS poll is sent during a transaction or the post-logout blackout', async () => {
+  const panel = await startStatusPanel();
+  const conn = new TexecomConnection({ log: silentLog, host: '127.0.0.1', port: panel.port, statusPollMs: 20 });
+  conn.start();
+  await once(conn, 'connected');
+  conn.blackoutUntil = Date.now() + 10000;
+  const before = panel.queries;
+  await new Promise((r) => setTimeout(r, 150));
+  assert.equal(panel.queries, before);
+  assert.equal(conn.connected, true, 'silence during a blackout must not force a reconnect');
+  conn.stop();
+  panel.close();
+});
