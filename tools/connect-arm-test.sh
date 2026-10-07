@@ -5,7 +5,8 @@
 #
 #   tools/connect-arm-test.sh <hap-port> <area-aid> [pin]
 #
-# Sequence: Night -> wait until armed -> Off -> wait until disarmed.
+# Sequence: Night -> wait until armed -> wait HOLD seconds (default 5) -> Off
+# -> wait until disarmed. Works for Connect and Crestron mode alike.
 # Prints HomeKit current/target every second so "Arming..." and the
 # transitions are visible. Ctrl+C at any time, then disarm at the keypad.
 set -u
@@ -21,7 +22,7 @@ echo "$(date +%T) start: $(get)"
 code=$(put 2); echo "$(date +%T) Night -> HTTP $code"
 [ "$code" = "204" ] || { echo "Night was rejected (HTTP $code); nothing was armed. Stopping."; exit 1; }
 watch_until night 40 || echo "  did not reach Night within 40 s"
-sleep 5
+sleep "${HOLD:-5}"
 code=$(put 3); echo "$(date +%T) Off -> HTTP $code"
 [ "$code" = "204" ] || echo "  Off was rejected (HTTP $code) - DISARM AT THE KEYPAD"
 watch_until disarmed 20 || echo "  did not reach Disarmed within 20 s - DISARM AT THE KEYPAD"
