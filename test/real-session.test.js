@@ -35,6 +35,8 @@ const silentLog = { info() {}, warn() {}, error() {}, debug() {} };
 const config = {
   name: 'Texecom',
   // No connection configured: lines are fed in directly below.
+  // Apply arm/exit events at once; burst coalescing has its own test.
+  _eventCoalesceMs: 0,
   zones: Object.entries(session.zones).map(([n, name]) => ({ name, zone_number: n, zone_type: 'motion' })),
   areas: [{ name: 'Home', area_number: '1', zones: [1, 2, 3, 4, 5] }],
 };
@@ -188,4 +190,25 @@ test('Crestron arm answers HomeKit at once; the outcome is applied when the pane
   await area.commandDone;
   assert.equal(area.service.getCharacteristic(Current).value, Current.NIGHT_ARM);
   assert.equal(area.service.getCharacteristic(Target).value, Target.NIGHT_ARM, 'target reverted after a failure');
+});
+
+test('a held-back burst (X, A, D) after a quick HomeKit disarm never shows the stale arm', async () => {
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, { ...config, _eventCoalesceMs: 50 }, api);
+  api.emit('didFinishLaunching');
+  const area = platform.areas.get(1);
+  const seen = [];
+  area.service.getCharacteristic(Current).on('change', ({ newValue }) => seen.push(STATE_NAMES[newValue]));
+  area.setCurrentState(Current.NIGHT_ARM); // as shown after the HomeKit arm
+  seen.length = 0;
+  // Real panel, 7 Oct 08:01:35: released together after the disarm's blackout.
+  const splitter = new LineSplitter((line) => platform.handleLine(line));
+  splitter.push(Buffer.from('"X0010\r\n"A00129\r\n"D0010\r\n', 'latin1'));
+  await new Promise((r) => setTimeout(r, 120));
+  assert.deepEqual(seen, ['disarmed']);
+
+  platform.handleLine('"A0013'); // a lone keypad arm is still applied, just slightly later
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+  await new Promise((r) => setTimeout(r, 120));
+  assert.equal(area.service.getCharacteristic(Current).value, Current.AWAY_ARM);
 });
