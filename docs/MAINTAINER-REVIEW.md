@@ -580,6 +580,10 @@ So the binary commands work inside the session the plugin already opens, with th
 
 **Alarm receiving centre as an event channel (casa).** A Premier Elite can report events over IP to a monitoring receiver (SIA or Contact ID, with a periodic `POLL` heartbeat carrying line-fail, AC-fail, battery-fail, armed and engineer flags). casa runs that receiver itself and only connects over UDL to send commands. It's an event feed that doesn't need the COM-IP held open. Setting it up means programming an ARC destination in the panel, so it's noted here as an option, not tested.
 
+### 6.9 Offering only the arm modes a panel uses (October 2026)
+
+With Night and Home both mapped to Part Arm 1, the Home app offers two buttons that do the same thing. `homekit_modes` (e.g. `["away", "night"]`) sets `validValues` on the Security System's target state, so only those buttons plus Off are offered. **Found on a live install:** iOS ignores a change to `validValues` on an accessory it already knows. The bridge's configuration number went up, the Home app was force-quit and the Pi rebooted, and Home was still offered. The Home app reads the list only when it first sees the accessory. So a reduced set of modes gives the alarm its own UUID: changing `homekit_modes` brings the alarm back as a new accessory (room and automations set again), and the setup page says so. Confirmed: the new accessory offered only Off, Away and Night. The setup page now has an "Arm modes in the Home app" section that explains what each button does on the panel.
+
 ### Credits
 
 Kieran Jones (original plugin and Crestron notes), Chris Shucksmith (Simple Protocol), Joseph Heenan and David Brooke (texecom-connect), the Sjoerdfc and southseaboy forks of texecom-connect, Daniel Chesterton (texecom2mqtt), JumpMaster (TexecomManager), Gareth Flowers (homebridge-texecom-connect), Michael Marconi (texecom_alarm), Chris Shucksmith (pytexalarm), ricol99 (casa), GoosieZA (esphome-texecom), Prinsessen (openhab-texecom-bridge), dxnphillips (Texecom Alerts).
