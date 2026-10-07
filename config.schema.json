@@ -379,7 +379,7 @@
         "title": "Arm modes shown in the Home app",
         "type": "array",
         "uniqueItems": true,
-        "description": "Which buttons the Home app offers besides Off. Leave empty for all three (Away, Night, Home). Changing this doesn't change the panel, only the choices shown.",
+        "description": "Which buttons the Home app offers besides Off. Leave empty for all three (Away, Night, Home). Changing this doesn't change the panel. The Home app only reads the buttons when it first sees an alarm, so after changing this the alarm appears as a new accessory: set its room and any automations again.",
         "items": {
           "type": "string",
           "oneOf": [

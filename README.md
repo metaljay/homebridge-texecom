@@ -187,7 +187,7 @@ The Home app shows an Off button plus up to three arm modes. On the panel:
 | Night | `night_part_arm`, or Part Arm 1 if unset | The part arm mapped to `night` |
 | Home | `home_part_arm`, or Part Arm 1 if unset (the same as Night) | The part arm mapped to `stay` |
 
-Use `homekit_modes` to offer only the modes you use, e.g. `["away", "night"]`, so the Home app doesn't show two buttons that do the same thing.
+Use `homekit_modes` to offer only the modes you use, e.g. `["away", "night"]`, so the Home app doesn't show two buttons that do the same thing. The Home app only reads an alarm's buttons when it first sees it, so changing `homekit_modes` makes the alarm appear as a new accessory: set its room and any automations again.
 
 ### Tamper reporting
 

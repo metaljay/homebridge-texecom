@@ -227,3 +227,16 @@ test('homekit_modes hides arm modes from the Home app; Off is always offered', (
   assert.deepEqual(all.areas.get(1).service.getCharacteristic(Target).props.validValues,
     [Target.STAY_ARM, Target.AWAY_ARM, Target.NIGHT_ARM, Target.DISARM]);
 });
+
+test('a reduced homekit_modes gives the alarm a new accessory UUID (the Home app caches the buttons)', () => {
+  const uuidFor = (overrides) => {
+    const api = createApi();
+    const platform = new TexecomPlatform(silentLog, { ...config, ...overrides }, api);
+    api.emit('didFinishLaunching');
+    return platform.areas.get(1).accessory.UUID;
+  };
+  const all = uuidFor({});
+  assert.equal(uuidFor({ homekit_modes: ['away', 'night', 'stay'] }), all, 'all three = unchanged');
+  assert.notEqual(uuidFor({ homekit_modes: ['away', 'night'] }), all);
+  assert.equal(uuidFor({ homekit_modes: ['night', 'away'] }), uuidFor({ homekit_modes: ['away', 'night'] }));
+});
