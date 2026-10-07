@@ -1,14 +1,12 @@
-[![npm version](https://badgen.net/npm/v/homebridge-texecom-full/latest)](https://www.npmjs.com/package/homebridge-texecom-full)
-[![npm downloads](https://badgen.net/npm/dt/homebridge-texecom-full)](https://www.npmjs.com/package/homebridge-texecom-full)
-[![verified-by-homebridge](https://badgen.net/badge/homebridge/verified/purple)](https://github.com/homebridge/homebridge/wiki/Verified-Plugins)
-
 > **About this fork.** A review and demonstrator fork of [homebridge-texecom-full](https://github.com/K1LL3R234/homebridge-texecom), offered to its maintainer to adopt. It isn't published to npm. It adds **Texecom Connect** support (use your SmartCom as it is) and fixes for the existing Crestron mode, all tested on a real Premier Elite. Details and evidence: [docs/MAINTAINER-REVIEW.md](docs/MAINTAINER-REVIEW.md).
 
 # Homebridge Texecom
 
-Put your Texecom **Premier Elite** alarm in the Apple **Home** app, through the **SmartCom** you already have.
+Control your Texecom **Premier Elite** alarm from the Apple **Home** app, using the **SmartCom** you already have.
 
 <img src="docs/images/how-it-connects.svg" width="760" alt="Home app, Homebridge with this plugin, SmartCom, Texecom panel">
+
+> 📘 **This guide is for SmartCom owners**, which is most people. Using a COM port set to Crestron, a ComIP, an adapter or a serial cable instead? Jump to [Already using Crestron, or connecting another way?](#crestron) at the bottom.
 
 ## ✨ What you get
 
@@ -44,7 +42,7 @@ In the Homebridge UI, go to **Plugins**, search for **Homebridge Texecom** and i
 Open the Homebridge UI's **Terminal** and run:
 
 ```
-npm install metaljay/homebridge-texecom#texecom-review
+npm install metaljay/homebridge-texecom
 ```
 
 </details>
@@ -67,13 +65,30 @@ In **Plugins**, find **Homebridge Texecom** and open its **Settings**.
 | Setting | What to choose |
 |---|---|
 | **Zones and areas** | Nothing: they're read from your panel, with their names |
-| **Buttons to show in the Home app** | ✅ Away and ✅ Night suit most homes |
-| **Part Arm 1 / 2 / 3 is** | Leave as they are: Part Arm 1 = Night, Part Arm 2 = Home |
+| **Buttons to show in the Home app** | Only the ones your panel has a use for. ✅ Away and ✅ Night suit most homes |
+| **Part Arm 1 / 2 / 3 is** | Match them to your panel (see [Know your part arms](#part-arms) below). Defaults: Part Arm 1 = Night, Part Arm 2 = Home |
 | **Advanced → Keep the panel clock right** | **24** |
 
 Click **Save**.
 
-> 💡 A **part arm** arms only some of your zones, for example downstairs only while you're upstairs at night. Your installer chose which zones each part arm covers.
+<a id="part-arms"></a>
+
+#### 🗺️ Know your part arms before you choose
+
+Besides a full arm (**Away**), your panel can have up to three **part arms**, each arming only some zones. Your installer chose them, so they differ from home to home. For example:
+
+| Part arm | Might arm | Good Home app button |
+|---|---|---|
+| Part Arm 1 | Downstairs only, so you can move around upstairs at night | **Night** |
+| Part Arm 2 | Just the garage, or one entry point | **Home** |
+| Part Arm 3 | Often not set up | (none) |
+
+**Before you choose your buttons, find out what each of yours covers.** Ask your installer, or look at the part-arm settings in Wintex. Then:
+
+- tick only the buttons for part arms you actually have (an unused one would arm nothing useful, or the wrong zones);
+- set **Part Arm 1 / 2 / 3 is** so each Home app button sets the part arm you expect.
+
+The Home app's buttons are always called Away, Night and Home; you choose which part arm sits behind Night and Home.
 
 ### 4️⃣ Restart and check
 
@@ -87,7 +102,7 @@ followed by your panel's model and a line for each zone.
 
 ### 5️⃣ Finish in the Home app
 
-The alarm and a sensor for each zone appear in the Home app's default room.
+The alarm and a sensor for each zone appear in the Home app by themselves, in the default room. There are no codes to scan: they're added to your Homebridge, which is already in the Home app. (Only if this is your very first Homebridge accessory: add Homebridge itself first, by scanning the QR code on the Homebridge UI's **Status** page.)
 
 - 🏷️ Move each one to the right room.
 - 🔔 Turn on notifications for the alarm (and for any sensors you care about).
@@ -142,6 +157,8 @@ Most people should use the settings page. To edit the config yourself, open **JS
 | `debug` | `true` logs every message from the panel, for reporting problems |
 
 </details>
+
+<a id="crestron"></a>
 
 <details>
 <summary><b>🔁 Already using Crestron, or connecting another way?</b></summary>
