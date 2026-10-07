@@ -41,7 +41,7 @@ Most people connect through their **SmartCom**: the small Texecom box next to th
 
 | Protocol | **Texecom Connect** (recommended) | **Crestron** |
 |---|---|---|
-| What you do to the SmartCom | Nothing: leave it as it is | Switch its COM port to "Crestron System" in the panel's engineer menu ([how](#setting-up-the-panel)) |
+| What you do to the SmartCom | Nothing: leave it as it is | Switch its COM port to "Crestron System" in the panel's engineer menu |
 | Texecom app | Can't connect while Homebridge is connected. Alarm notifications from the app still arrive | **Stops working**, including its notifications |
 | Zones and areas | Found automatically, with their names | You type them in |
 | Night / Home / Away in the Home app | Always the exact mode, however it was armed | Exact when armed from the Home app; arms from the keypad show as one mode you choose |
@@ -94,99 +94,115 @@ If you want to keep the Texecom app fully working on its SmartCom, you can add a
 
 </details>
 
-## Step 2: fill in the settings
+## Step 2: follow the guide for your protocol
 
-In the Homebridge UI, open **Plugins**, find **Homebridge Texecom** and choose **Settings**. Work down the page; each option explains itself, and section 4 can be left as it is.
+Open the guide for the protocol you chose. Each one takes you from the panel to the Home app.
 
-### 1. Connection
+<details>
+<summary><b>Guide: Texecom Connect</b> (SmartCom left as it is)</summary>
 
-<img src="docs/images/settings-1-connection.png" width="420" alt="Connection settings">
+### 1. Check the SmartCom
 
-1. **How does Homebridge reach your panel?** The protocol you chose in step 1.
-2. **IP address:** the SmartCom, ComIP or adapter's address. Find it in your router's list of connected devices, and reserve it there so it doesn't change.
-3. **Port:** **10001** for a SmartCom or ComIP. For a serial-to-network adapter, the port you set on it (often 23).
-4. **Serial port:** only for a USB-serial cable, e.g. `/dev/ttyUSB0`. Otherwise leave it blank.
-5. **UDL code:** usually **1234** (see [What you need](#what-you-need)).
+Nothing to change if the Texecom app works with your SmartCom today. The only thing that would stop the plugin is **Encrypted Ports**: if you've turned that on in Wintex, turn it off for the SmartCom's port.
 
-### 2. Zones and areas
+Close the Texecom app on your phone before you start; while Homebridge is connected, the app can't connect.
 
-<img src="docs/images/settings-2-zones-and-areas.png" width="420" alt="Zones and areas">
+### 2. Fill in the settings
 
-**Texecom Connect:** nothing to fill in. This section only shows a note, as zones and areas are read from the panel:
+In the Homebridge UI, open **Plugins**, find **Homebridge Texecom** and choose **Settings**.
 
-<img src="docs/images/settings-connect-2-zones-and-arm-modes.png" width="420" alt="Connect: zones read automatically, and part arm choices">
+<img src="docs/images/settings-connect-1-connection.png" width="420" alt="Connection settings, Texecom Connect">
 
-**Crestron:** add each zone you want in the Home app.
+1. **How does Homebridge reach your panel?** Texecom Connect.
+2. **IP address:** the SmartCom's address. Find it in your router's list of connected devices, and reserve it there so it doesn't change.
+3. **Port:** 10001.
+4. **UDL code:** usually **1234** (see [What you need](#what-you-need)).
 
-- **Name in the Home app**: e.g. "Front door".
-- **Zone number**: as shown on your keypad or in Wintex (Zone 1, Zone 2…). Your installer's zone list or the panel's log will tell you which is which.
-- **Shows as**: *Motion sensor* for movement detectors, *Contact sensor* for door and window contacts, or smoke / carbon monoxide.
-- **Hold time**: motion detectors only report a moment of movement. **5000** (5 seconds) keeps the sensor showing "detected" long enough for automations; 0 is fine for door contacts.
+<img src="docs/images/settings-connect-2-zones-and-arm-modes.png" width="420" alt="Zones read automatically, and arm modes">
 
-Then add your **area**: most homes have one, **Area 1** (area A on the keypad), named however you like, e.g. "House".
-
-### 3. Arm modes in the Home app
-
-<img src="docs/images/settings-3-arm-modes.png" width="420" alt="Arm modes">
-
-The Home app's alarm has an Off button and up to three arm buttons:
-
-| Button | What it does on the panel |
-|---|---|
-| **Away** | Full arm |
-| **Night** | A part arm: Crestron, the one you choose here (Part Arm 1 if blank); Connect, the part arm set to Night |
-| **Home** | A part arm: Crestron, the one you choose here (Part Arm 1 if blank, so the same as Night); Connect, the part arm set to Home |
-
-A **part arm** arms only some zones (for example downstairs only, while you're upstairs at night). Your installer sets up which zones each of Part Arm 1, 2 and 3 covers.
-
-- **Buttons to show:** tick only the ones you use. **Most homes: Away and Night.** If you change this later, the alarm reappears in the Home app as a new accessory (the Home app remembers an alarm's buttons), so set its room and automations again.
-- **Crestron, "Arms from the keypad or a keyfob show as":** the panel says "armed" without saying which mode, so pick how those arms appear. Away suits most homes.
-
-### 4. Advanced (can be left as they are)
-
-<img src="docs/images/settings-4-advanced.png" width="420" alt="Advanced settings">
-
-- **Check the panel every (seconds)** (Crestron): 60. Corrects the Home app if a message was missed, and reconnects if the panel stops answering.
-- **Keep the panel clock right** (Connect): 24 hours is a good choice; it puts the clock right after a power cut.
-- **Keyfob users:** panel user numbers of keyfobs, if you use them; their arms show as Away.
-- **Raise an alarm from zone activity:** leave off. The panel reports real alarms itself.
-- **Detailed logging:** only when reporting a problem.
+5. **Zones and areas:** nothing to fill in. They're read from the panel, with their names.
+6. **Buttons to show in the Home app:** tick the ones you use. **Most homes: Away and Night.**
+7. **Part Arm 1 / 2 / 3 is:** which Home app button sets each of your panel's part arms. The defaults (Part Arm 1 = Night, Part Arm 2 = Home) suit most homes. A part arm arms only some zones (for example downstairs only, at night); your installer set up which zones each covers.
+8. **Advanced:** **Keep the panel clock right: 24** is a good choice. Leave the rest as it is.
 
 Click **Save** and restart Homebridge.
 
-## Step 3: check it works
+### 3. Check it works
 
-In the Homebridge log you should see the plugin connect, for example:
+The Homebridge log should show `Connect: logged in and subscribed to events`, your panel's model, and a line for each zone found. In the Home app, the alarm and a sensor for each zone appear in the default room; move them to the right rooms.
 
-```
-[Texecom] Connected to Texecom panel via 192.168.1.50:10001
-```
+### Good to know
 
-or, for Texecom Connect, `Connect: logged in and subscribed to events` and your panel's model. In the Home app, the alarm and the zone sensors appear in the default room; move them to the right rooms. Walk past a detector and its sensor should show motion within a second or two.
+- **When the alarm goes off**, the panel briefly drops the connection to send its own alarm notification. The plugin reconnects and catches up within seconds.
+- **Wintex** can still connect through the SmartCom while Homebridge is connected.
+- **If you change the buttons ticked** later, the alarm reappears in the Home app as a new accessory (the Home app remembers an alarm's buttons), so set its room and automations again.
 
-**Coming from the published plugin (4.x)?** Your config keeps working, but the Home app sees the alarm and sensors as new accessories: remove any old ones left behind, then set rooms and automations again.
+</details>
 
-It's best to run this plugin as a [child bridge](https://github.com/homebridge/homebridge/wiki/Child-Bridges), so a problem with the alarm connection can't affect your other accessories.
+<details>
+<summary><b>Guide: Crestron</b> (SmartCom switched to Crestron System)</summary>
 
-## Setting up the panel
+### 1. Switch the SmartCom's COM port to Crestron
 
-**Texecom Connect:** nothing to do if the SmartCom or ComIP already works with the Texecom app. Its COM port stays set to "SmartCom" or "ComIP Module". If you've turned on **Encrypted Ports** in Wintex, turn it off for that port.
-
-**Crestron:** set the COM port Homebridge uses to "Crestron System", at the keypad:
+This stops the Texecom app working with the SmartCom. At the panel's keypad:
 
 1. Enter the engineer code.
 2. Scroll to "UDL/Digi Options", then press 8 for "Com Port Setup".
-3. Scroll to the COM port, press "No" to edit, press 8 for "Crestron System", and "Yes" to save.
+3. Scroll to the COM port the SmartCom is on (usually Com Port 1), press "No" to edit, press 8 for "Crestron System", and "Yes" to save.
 4. Check the UDL code under "UDL" while you're there.
 5. Press "Menu" repeatedly to leave the engineer menu.
 
-For a ComIP on that port: set it up and check it works first, then change the port to Crestron, so the panel has already given the ComIP its network settings. A SmartCom switched to Crestron works the same way, but the Texecom app can no longer use it.
+The SmartCom keeps the network settings it already had. (The same steps apply to a ComIP. If you're adding a new one, set it up and check it works first, then switch its port to Crestron.)
 
-## Good to know
+### 2. Fill in the settings
 
-- **Crestron: about 30 seconds after an arm or disarm from the Home app,** the panel holds back its other messages, then sends them all at once. Nothing is lost, but sensors update late during that time.
-- **Texecom Connect: when the alarm goes off,** the panel briefly drops the connection to send its own alarm notification. The plugin reconnects and catches up automatically.
+In the Homebridge UI, open **Plugins**, find **Homebridge Texecom** and choose **Settings**.
+
+<img src="docs/images/settings-1-connection.png" width="420" alt="Connection settings, Crestron">
+
+1. **How does Homebridge reach your panel?** Crestron.
+2. **IP address:** the SmartCom's address. Find it in your router's list of connected devices, and reserve it there so it doesn't change.
+3. **Port:** 10001.
+4. **Serial port:** leave blank (it's only for a USB-serial cable).
+5. **UDL code:** usually **1234** (see [What you need](#what-you-need)).
+
+<img src="docs/images/settings-2-zones-and-areas.png" width="420" alt="Zones and areas">
+
+6. **Zones:** add each zone you want in the Home app:
+   - **Name in the Home app**: e.g. "Front door".
+   - **Zone number**: as on your keypad or in Wintex (Zone 1, Zone 2…). Your installer's zone list will tell you which is which.
+   - **Shows as**: *Motion sensor* for movement detectors, *Contact sensor* for door and window contacts, or smoke / carbon monoxide.
+   - **Hold time**: **5000** (5 seconds) for motion detectors, so a moment of movement still triggers automations; 0 for door contacts.
+7. **Areas:** most homes have one: **Area 1** (area A on the keypad), named however you like, e.g. "House".
+
+<img src="docs/images/settings-3-arm-modes.png" width="420" alt="Arm modes">
+
+8. **Buttons to show in the Home app:** tick the ones you use. **Most homes: Away and Night.** Away fully arms the panel; Night and Home each set a part arm (some zones only, e.g. downstairs at night).
+9. **Night arms / Home arms:** which part arm each button sets. Blank means Part Arm 1. If Home would do the same as Night, untick Home instead.
+10. **Arms from the keypad or a keyfob show as:** the panel says "armed" without saying which mode, so pick how those arms appear. Away suits most homes.
+
+<img src="docs/images/settings-4-advanced.png" width="420" alt="Advanced settings">
+
+11. **Advanced:** leave as it is. **Check the panel every 60 seconds** corrects the Home app if a message was missed. Add **keyfob users** (panel user numbers) only if you use keyfobs.
+
+Click **Save** and restart Homebridge.
+
+### 3. Check it works
+
+The Homebridge log should show `Connected to Texecom panel via` followed by the SmartCom's address. In the Home app, the alarm and your zone sensors appear in the default room; move them to the right rooms. Walk past a detector and its sensor should show motion within a second or two.
+
+### Good to know
+
+- **After you arm or disarm from the Home app**, the panel holds back its other updates for about 30 seconds, then sends them all at once. Nothing is lost, but sensors update late during that time.
 - **Only areas 1-8** can be armed from the Home app.
+- **If you change the buttons ticked** later, the alarm reappears in the Home app as a new accessory (the Home app remembers an alarm's buttons), so set its room and automations again.
+
+</details>
+
+### Both protocols
+
+- **Coming from the published plugin (4.x)?** Your config keeps working, but the Home app sees the alarm and sensors as new accessories: remove any old ones left behind, then set rooms and automations again.
+- It's best to run this plugin as a [child bridge](https://github.com/homebridge/homebridge/wiki/Child-Bridges), so a problem with the alarm connection can't affect your other accessories.
 - **Tamper:** each zone sensor shows the Home app's *Tampered* status when the panel reports a tamper on it.
 
 ## Troubleshooting
