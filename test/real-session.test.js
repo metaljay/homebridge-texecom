@@ -129,10 +129,11 @@ test('periodic ASTATUS corrects a missed disarm but leaves Triggered alone', () 
 test('Crestron Night/Home use the configured part arm (binary S), else \\Y as before', async () => {
   const Target = hap.Characteristic.SecuritySystemTargetState;
   for (const [overrides, target, expected] of [
-    [{}, Target.NIGHT_ARM, 'Y\x01'],
+    [{}, Target.NIGHT_ARM, { text: 'Y\x01', frame: Buffer.from([0x05, 0x53, 0x00, 0x01, 0xa6]) }],
     [{ night_part_arm: 1, home_part_arm: 2 }, Target.NIGHT_ARM, Buffer.from([0x05, 0x53, 0x00, 0x01, 0xa6])],
     [{ night_part_arm: 1, home_part_arm: 2 }, Target.STAY_ARM, Buffer.from([0x05, 0x53, 0x00, 0x02, 0xa5])],
-    [{ night_part_arm: 1, home_part_arm: 2 }, Target.AWAY_ARM, 'A\x01'],
+    [{ night_part_arm: 1, home_part_arm: 2 }, Target.AWAY_ARM, { text: 'A\x01', frame: Buffer.from([0x04, 0x41, 0x00, 0xba]) }],
+    [{}, Target.DISARM, { text: 'D\x01', frame: Buffer.from([0x04, 0x44, 0x00, 0xb7]) }],
   ]) {
     const api = createApi();
     const platform = new TexecomPlatform(silentLog, { ...config, udl: '1234', ...overrides }, api);
@@ -162,4 +163,29 @@ test('Connect: a stale exit flag re-read just after arming does not change the t
   area.applyConnectState({ state: 'in exit', partArm: null });
   assert.equal(area.service.getCharacteristic(Target).value, Target.NIGHT_ARM);
   assert.equal(area.service.getCharacteristic(Current).value, Current.NIGHT_ARM);
+});
+
+test('Crestron arm answers HomeKit at once; the outcome is applied when the panel transaction ends', async () => {
+  const Target = hap.Characteristic.SecuritySystemTargetState;
+  const api = createApi();
+  const platform = new TexecomPlatform(silentLog, { ...config, udl: '1234' }, api);
+  api.emit('didFinishLaunching');
+  const area = platform.areas.get(1);
+  let finish;
+  platform.connection = { sendCommands: () => new Promise((resolve, reject) => {
+    finish = { resolve, reject };
+  }) };
+
+  await area.setTargetState(Target.NIGHT_ARM); // returns although the panel hasn't answered
+  assert.equal(area.service.getCharacteristic(Current).value, Current.DISARMED);
+  finish.resolve();
+  await area.commandDone;
+  assert.equal(area.service.getCharacteristic(Current).value, Current.NIGHT_ARM);
+
+  area.service.getCharacteristic(Target).updateValue(Target.DISARM);
+  await area.setTargetState(Target.DISARM);
+  finish.reject(new Error('Panel refused command'));
+  await area.commandDone;
+  assert.equal(area.service.getCharacteristic(Current).value, Current.NIGHT_ARM);
+  assert.equal(area.service.getCharacteristic(Target).value, Target.NIGHT_ARM, 'target reverted after a failure');
 });

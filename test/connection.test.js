@@ -222,3 +222,34 @@ test('binary UDL frame: login without OK still proceeds, ACK resolves, NAK rejec
   conn.blackoutUntil = 0;
   await assert.rejects(conn.sendCommands(['W1234', frame]), /refused/);
 });
+
+test('a text command answered ERROR falls back to its binary UDL frame', async (t) => {
+  const raw = [];
+  const sockets = new Set();
+  const server = net.createServer((socket) => {
+    sockets.add(socket);
+    socket.on('data', (data) => {
+      raw.push(Buffer.from(data));
+      if (data.toString('latin1') === '\\D\x01/') {
+        socket.write('ERROR\r\n'); // as on the real panel when the login got no OK
+      } else if (data[0] === 0x04 && data[1] === 0x44) {
+        socket.write(Buffer.from([0x03, 0x06, 0xf6]));
+      }
+    });
+  });
+  server.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const conn = new TexecomConnection({ log: silentLog, host: '127.0.0.1', port: server.address().port,
+    loginTimeoutMs: 100, statusPollMs: 0 });
+  t.after(() => {
+    conn.stop();
+    sockets.forEach((s) => s.destroy());
+    server.close();
+  });
+  conn.start();
+  await once(conn, 'connected');
+  const frame = Buffer.from([0x04, 0x44, 0x00, 0xb7]);
+  await conn.sendCommands(['W1234', { text: 'D\x01', frame }]);
+  assert.equal(raw.filter((b) => b.toString('latin1') === '\\D\x01/').length, 1, 'text sent once, not retried');
+  assert.ok(raw.some((b) => b.equals(frame)), 'binary fallback sent');
+});
