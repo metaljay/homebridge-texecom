@@ -360,7 +360,7 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 3,
-        "description": "Crestron only, area 1: the part arm (1-3) that HomeKit Night sets, using the binary UDL command. Leave empty to keep the Crestron Y command, which always sets Part Arm 1.",
+        "description": "Crestron only, area 1: the part arm (1-3) that Night sets. Empty = Part Arm 1.",
         "condition": {
           "functionBody": "return model.protocol !== 'connect';"
         }
@@ -370,7 +370,7 @@
         "type": "integer",
         "minimum": 1,
         "maximum": 3,
-        "description": "Crestron only, area 1: the part arm (1-3) that HomeKit Home sets, using the binary UDL command. Leave empty to keep the Crestron Y command, which always sets Part Arm 1.",
+        "description": "Crestron only, area 1: the part arm (1-3) that Home sets. Empty = Part Arm 1, the same as Night.",
         "condition": {
           "functionBody": "return model.protocol !== 'connect';"
         }
@@ -379,13 +379,28 @@
         "title": "Arm modes shown in the Home app",
         "type": "array",
         "uniqueItems": true,
-        "description": "Which arm modes the Home app offers (Off is always offered). Leave empty for all three. For example, choose Away and Night if Home would do the same as Night on your panel.",
+        "description": "Which buttons the Home app offers besides Off. Leave empty for all three (Away, Night, Home). Changing this doesn't change the panel, only the choices shown.",
         "items": {
           "type": "string",
           "oneOf": [
-            { "title": "Away", "enum": ["away"] },
-            { "title": "Night", "enum": ["night"] },
-            { "title": "Home (Stay)", "enum": ["stay"] }
+            {
+              "title": "Away",
+              "enum": [
+                "away"
+              ]
+            },
+            {
+              "title": "Night",
+              "enum": [
+                "night"
+              ]
+            },
+            {
+              "title": "Home (Stay)",
+              "enum": [
+                "stay"
+              ]
+            }
           ]
         }
       },
@@ -471,19 +486,28 @@
     },
     {
       "type": "fieldset",
+      "title": "Arm modes in the Home app",
+      "description": "The Home app shows an Off button plus up to three arm modes. What each one does on the panel:<br>• <b>Away</b>: full arm.<br>• <b>Night</b>: Crestron, the part arm chosen below, or Part Arm 1 if none; Connect, the part arm mapped to Night.<br>• <b>Home</b>: Crestron, the part arm chosen below, or Part Arm 1 if none (so the same as Night unless you change it); Connect, the part arm mapped to Home.<br>Choose only the modes you use, so the Home app doesn't offer buttons that do the same thing.",
+      "expandable": true,
+      "expanded": true,
+      "items": [
+        "homekit_modes",
+        "night_part_arm",
+        "home_part_arm",
+        "part_arm_1",
+        "part_arm_2",
+        "part_arm_3",
+        "default_arm_state"
+      ]
+    },
+    {
+      "type": "fieldset",
       "title": "Advanced",
       "expandable": true,
       "expanded": false,
       "items": [
-        "part_arm_1",
-        "part_arm_2",
-        "part_arm_3",
         "time_sync_interval",
         "status_poll_interval",
-        "homekit_modes",
-        "night_part_arm",
-        "home_part_arm",
-        "default_arm_state",
         {
           "key": "remote_users",
           "type": "array",

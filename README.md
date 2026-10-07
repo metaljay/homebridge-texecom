@@ -177,6 +177,18 @@ This plugin is a platform plugin so you must configure each zone from your Texec
 | `status_poll_interval` | 60 | Crestron only: seconds between `ASTATUS` checks. Corrects HomeKit after a missed arm/disarm, and reconnects if the panel stops answering for three checks in a row (e.g. the serial side of an IP bridge has failed). 0 = only after connecting |
 | `debug` | false | Log every message received from the panel without enabling Homebridge-wide debug mode |
 
+### Arm modes in the Home app
+
+The Home app shows an Off button plus up to three arm modes. On the panel:
+
+| Home app | Crestron | Connect |
+| --- | --- | --- |
+| Away | Full arm | Full arm |
+| Night | `night_part_arm`, or Part Arm 1 if unset | The part arm mapped to `night` |
+| Home | `home_part_arm`, or Part Arm 1 if unset (the same as Night) | The part arm mapped to `stay` |
+
+Use `homekit_modes` to offer only the modes you use, e.g. `["away", "night"]`, so the Home app doesn't show two buttons that do the same thing.
+
 ### Tamper reporting
 
 Each zone sensor exposes HomeKit's *Tampered* status. A zone is reported as tampered when the panel sends a status other than secure (`0`) or active (`1`).
