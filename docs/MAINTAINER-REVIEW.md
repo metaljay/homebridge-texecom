@@ -15,6 +15,7 @@ Everything here was tested on a real **Premier Elite 24 (firmware V6.05.03)** wi
 5. [Suggested route](#5-suggested-route)
 6. [Testing done](#6-testing-done)
 7. [Other projects and credits](#7-other-projects-and-credits)
+8. [Later findings (October 2026)](#8-later-findings-october-2026)
 
 ---
 
@@ -355,3 +356,27 @@ Not yet exercised on the real panel with this plugin itself: the Tampered/Fault 
 The same protocol work is also available as a Home Assistant integration: [metaljay/ha-texecom](https://github.com/metaljay/ha-texecom).
 
 Original plugin by Kieran Jones, maintained by Max Christian and Chris Posthumus. Protocol credits for the Connect code are in [lib/connect/NOTICE](../lib/connect/NOTICE).
+
+---
+
+## 8. Later findings (October 2026)
+
+Found while testing the Home Assistant port of the same code on the same panel (Premier Elite 24, V6.05.03). They apply to the fork's Connect code as it stands (`master`). The fork isn't being developed further, so they're noted here rather than fixed.
+
+| # | Where | What happens | Fix |
+|---|---|---|---|
+| 1 | `lib/connectPanel.js:322` | Healthy power readings clear every name in `MAINS_FAULTS`, including **PSU AC Fail** (log 107: a *remote* power supply's mains). A real PSU mains failure disappears within 30 s, although the panel's own mains is fine and the PSU's isn't | Clear only *AC Fail* from the readings; leave *PSU AC Fail* to its own restore log |
+| 2 | `lib/connectPanel.js:317` | 0 mA below 13.3 V counts as "on battery". A panel whose current always reads 0, or one read just after a restart while on battery, gets the wrong answer | Trust 0 mA only once the panel has reported a non-zero current since connecting; otherwise require a clearly low voltage (below ~12.9 V) |
+| 3 | `lib/areaAccessory.js:124,130` | Crestron `"A0010` / `"D0010` (e.g. the held-back event after a UDL arm) is logged as "by user 0" | User 0 means nobody: don't credit it to anyone |
+| 4 | `lib/connection.js:131` | While the Crestron bridge is down, every reconnect attempt logs an error | One warning after a few failures, then quiet until it's back |
+| 5 | Connect | Tampers and faults that started before Homebridge connected aren't known (they only come from log events), so after a restart *Tampered* / *Fault* stay clear until the next change. Mains is the exception (the power reading) | Being investigated: the area flags (see below) or the system flags (command 10) may show them |
+| 6 | Design | The keep-alive work (state, power, keypad text) runs when no command has been sent for 30 s. That's fine as the fork stands, but anything that sends commands as zones change (e.g. re-reading "Ready" whenever a detector clears) starves it while people move about, and the mains restore goes unseen | Run that work on its own timer, not only when idle |
+
+**More about the panel (V6.05.03):**
+
+- **Area flags while disarmed and quiet:** 16 *Ready*, 25 *Force Armable*, 29 *Bell SCB*, 32 *Detector Reset*, 67 *LED control*. 16 and 25 clear together while any detector is active, and come back once it clears (a bulk read about 2 s later shows it). **System flags** (command 10, 8 bytes) read `00 20 09 00 00 00 00 01` in the same state.
+- **The SmartCom's refusal window**, measured: after a client restarts, a new login got in after 4–20 s. Straight after a short session closed (a setup check), the first login was closed by the panel and the next, 5 s later, was accepted.
+- **Finding the SmartCom:** it registers on the network as **`texe_hub`** (its MAC prefix is Microchip's), which helps users spot it in their router's device list.
+- **A Connect login doesn't add anything to the panel's event log** (no *Download Start/End*).
+
+**For users (ideas that worked well in the Home Assistant version):** say *not connected* and *refused* separately when an arm fails; put keypad user names in the log instead of numbers; and for a tamper, say where to look (*Panel Box Tamper* is the lid; *Auxiliary Tamper* is a detector's cover on the shared circuit).
