@@ -4,7 +4,7 @@
 **From:** [metaljay/homebridge-texecom](https://github.com/metaljay/homebridge-texecom), prepared with Claude Code
 **Reviewed:** release `4.4.0` (same code as `4.4.0-beta.1`). Line numbers refer to its `index.js`.
 
-Everything here was tested on a real **Premier Elite 24 (firmware V6.05.03)** with Homebridge 2.4 on a Raspberry Pi. The panel has a SmartCom on Com Port 1 and a Crestron port (Com Port 3) bridged to the network by an ESP8266 serial server, so both protocols could be watched side by side. Items marked *Reproduced* were also run against 4.4.0 with a fake panel ([`tools/fake-panel.js`](../tools/fake-panel.js)), so you can repeat them.
+Everything here was tested on a real **Premier Elite 24 (firmware V6.05.03)** with Homebridge 2.4 on a Raspberry Pi. The panel has a SmartCom on Com Port 1 and a Crestron port (Com Port 3) bridged to the network by an ESP8266 serial server, so both protocols could be watched side by side. Items marked *Reproduced* were also run against 4.4.0 with a fake panel ([`tools/fake-panel.js`](https://github.com/metaljay/homebridge-texecom/blob/master/tools/fake-panel.js)), so you can repeat them.
 
 ## Contents
 
@@ -54,7 +54,7 @@ Most serious first.
 
 **What happens.** `setupConnection()` (lines 349–354) passes each TCP `data` chunk to `processData()`, which parses only its start. TCP has no message boundaries, and the panel often sends events close together, so one chunk can hold several lines. Every line after the first is dropped. A chunk such as `"Z0071\r\nOK\r\n` also fails the `trim() === 'OK'` check, so the command times out and is resent. Serial users aren't affected: that path already uses `ReadlineParser`.
 
-**Evidence.** In a minute of walking past sensors, 3 of 23 chunks held more than one message, losing 5 zone events. In a keypad test, "code entered" and "disarmed" (`"U0030` + `"D0013`) arrived together, and **2 of 3 disarms were lost**. The plugin still believed the area was armed, so every movement afterwards raised `Area 001 manual triggered`: **6 false alarms in 2 minutes**, with HomeKit left on Triggered. The session, with its original chunking, is in [`test/fixtures/real-session-2026-10-06.json`](../test/fixtures/real-session-2026-10-06.json), and [`tools/replay-panel.js`](../tools/replay-panel.js) replays it to any build:
+**Evidence.** In a minute of walking past sensors, 3 of 23 chunks held more than one message, losing 5 zone events. In a keypad test, "code entered" and "disarmed" (`"U0030` + `"D0013`) arrived together, and **2 of 3 disarms were lost**. The plugin still believed the area was armed, so every movement afterwards raised `Area 001 manual triggered`: **6 false alarms in 2 minutes**, with HomeKit left on Triggered. The session, with its original chunking, is in [`test/fixtures/real-session-2026-10-06.json`](https://github.com/metaljay/homebridge-texecom/blob/master/test/fixtures/real-session-2026-10-06.json), and [`tools/replay-panel.js`](https://github.com/metaljay/homebridge-texecom/blob/master/tools/replay-panel.js) replays it to any build:
 
 | | 4.4.0 | Fork |
 |---|---|---|
@@ -80,7 +80,7 @@ After a UDL session the stream also carries binary frames with no line ending (s
 
 *Confirmed on the real panel.*
 
-**What happens.** When a zone in an away-armed area goes active, the plugin marks the area Triggered. But walking in through the entry route is exactly that: a zone going active while armed. The panel starts the entry delay (`"E0010`) and you disarm. Only the panel knows which zones are entry routes, and it reports real alarms itself (`"L0010`), correctly. In the test, the hallway (entry route) gave `"E`, and walking on into the kitchen (immediate) gave `"L`.
+**What happens.** When a zone in an away-armed area goes active, the plugin marks the area Triggered. But walking in through the entry route is exactly that: a zone going active while armed. The panel starts the entry delay (`"E0010`) and you disarm. Only the panel knows which zones are entry routes, and it reports real alarms itself (`"L0010`), correctly. In the test, the entry zone gave `"E`, and walking on into an interior zone (immediate) gave `"L`.
 
 **Fix.** Use `"L` for Triggered. Make zone inference opt-in for panels that don't send `L`, and ignore activity between `"E` and the following `"D`/`"L`. The fork does both (`trigger_from_zones`, off by default).
 
@@ -185,6 +185,8 @@ Lines 790–791 start a new dwell timer without clearing the previous one, so a 
 
 Confirmed on the V6.05.03 panel unless stated.
 
+Further detail, kept up to date on the same panel: [ha-texecom's protocol notes](https://github.com/metaljay/ha-texecom/blob/main/docs/development/protocol.md).
+
 ### 3.1 Crestron messages
 
 | Message | Meaning |
@@ -217,22 +219,22 @@ The panel doesn't say whether an arm was full or part: `LSTATUS` can tell, but n
 - **Keypad emulation (`KEY<digit>`) is ignored** on this firmware, with CR LF, LF or no line ending.
 - **Memory addresses are firmware-specific.** The status addresses pytexalarm and casa read on V4.02 (clock `0x003069`, area state `0x0017B6`…) return zeros on V6.05.03, so a plugin shouldn't read state by address.
 - An ACK isn't proof a command was carried out; take the result from the events and `ASTATUS` that follow.
+- The binary `S` part-arm frame has only been confirmed for area 1; other areas are untested. `ASTATUS` doesn't show an exit delay (the area reads `N` until it has armed) or the end of an alarm.
 
 ### 3.3 Texecom Connect
 
-- **When an alarm is reported, the panel deliberately drops the Connect session** to send its own alarm notification (the Texecom app's push still arrives). A client must reconnect and re-read the state. On a SmartCom shared with the app, the drop comes as `ATH0`/`ATZ`.
+- **When an alarm is reported, the SmartCom drops the Connect session** to send its own report (the Texecom app's push still arrives), then turns logins away for **about 2 minutes** (2 min 8 s, twice). On this panel the drop came about 1.5 s **after the disarm** that followed the alarm, just after the alarm's log entries were marked *communicated*, not when the alarm started. Why it waits, and whether that depends on how the panel reports alarms, is unknown. The session ends with `+++` (modem commands such as `ATH0`/`ATZ` can also appear) or a plain close. Keep showing the last state (Triggered) meanwhile, then reconnect and re-read. A dedicated ComIP stayed connected through an alarm (another project).
 - The panel **never reports an alarm ending**, and an arm that fails in the exit delay sends no area event. Re-read the area flags periodically; the fork does it every 30 s, which also keeps the session alive (it drops after ~60 s idle).
 - State reads can be answered with a **1-byte NAK** just after a burst of events. Treat it as "try again", never as data (as data, `0x15` reads as "zone 1 active" or "area in alarm").
-- After "Part Armed 1" the panel sends an undocumented area state **6**, and a flag re-read straight after can still show the **exit flag**.
+- **Area states 6, 7 and 8** arrive straight after *part armed* (4) for Part Arm 1, 2 and 3 (5 + the part arm; 8 seen after a keypad Part Arm 3, 14 October 2026). They aren't in the published lists, and a V5.02.01 panel didn't send them, so take the part arm from logs 78–80 / 204–209 or a flag re-read. A flag re-read straight after a part arm can still show the **exit flag** (3.5).
 - Bulk area-flag reads work here (72 bytes); some older firmware refuses them, so fall back to one flag at a time.
-- Wintex can connect through the same SmartCom while a Connect client is connected.
-- A SmartCom **refuses a new session for about a minute** after the last one closed (a restart, or the drop at alarm time); meanwhile a login gets either a closed socket or 80-byte replies that aren't frames. Keep retrying; don't treat it as a wrong UDL.
+- Wintex can connect through the same SmartCom while a Connect client is connected. But reading zone details while Wintex was connected ended the Connect session, and logins were turned away until Wintex disconnected (status reads were fine): see 3.5.
+- A SmartCom **refuses a new session for anything from about 4 to 70 s** after the last one closed (allow 75 s before calling it a failure), and for about 2 minutes after the drop at alarm time; meanwhile a login gets a closed socket, 80-byte replies that aren't frames, or frames with bad CRCs. Keep retrying; don't treat it as a wrong UDL.
 - **Switching arm mode** (disarm, then arm) produces an area "disarmed" event **0.3 s** before the new exit delay. Passed straight to HomeKit, that shows (and may notify) Disarmed in between.
 - **Zone alarms are logged twice**: once when they happen and once when reported (`communicated` set). Sometimes only the second arrives, after the disarm; the zone's state byte has its *alarmed* bit (0x10) set at once, which is the quicker way to name the zone.
 - **ARM_FAILED (log type 85) carries the zone** that stopped the arm in `parameter`, one log per active zone (zones that see you at the end of the exit time; the panel sounds its "fail to set" warning).
-- Area state **7** follows Part Arm 2 the way 6 follows Part Arm 1 ("settled").
-- **Tampers that aren't zones** are log events with group 11 (tamper) and 12 (restored): type **60** *Panel Box Tamper* (the lid, the keypad shows "Panel Lid Tamper") and **62** *Auxiliary Tamper*. On this install every detector's tamper is on the shared auxiliary circuit, so the panel can't say which detector was opened, and zone tamper states never change. Names for all log types are in texecom-connect.
-- **Mains failure**: *AC Fail* (type 47, group 9) arrives at once, but the restore was **never logged** (waited 14 minutes, twice). The power reading (command 25) shows it: on battery both currents read **0** and the voltage falls (13.0 → 12.2 V in 2 minutes); on mains ~300 mA at ~13.6 V. Reading it every keep-alive gives the restore within 30 s, and the right answer after a restart.
+- **Tampers that aren't zones** are log events with group 11 (tamper) and 12 (restored): type **60** *Panel Box Tamper* (the lid, the keypad shows "Panel Lid Tamper") and **62** *Auxiliary Tamper*. On this install every detector's tamper is on the shared auxiliary circuit, so the panel can't say which detector was opened, and zone tamper states never change. Names for all log types are in texecom-connect. **The panel doesn't always log them**: see 3.5 for a fallback on area flag 44.
+- **Mains failure**: *AC Fail* (type 47, group 9) arrives at once, but the restore is **logged late, or not at all**: one day, two *AC Fail* entries were followed by a single *Mains AC Restore* about 4 minutes after the second; other times nothing came within 14 minutes. The power reading (command 25) shows it: on battery both currents read **0** and the voltage falls (13.0 → 12.2 V in 2 minutes); on mains ~300 mA at ~13.6 V. Reading it every keep-alive gives the restore within 30 s, and the right answer after a restart.
 - **A total power loss resets the panel clock** (to 31 Oct 2023 on V6.05.03), so clock sync matters on reconnect, not only daily.
 - The keypad text (command 13) shows alerts, e.g. "System Alerts!" or "Panel Lid Tamper", with the clock on the second line.
 
@@ -241,6 +243,114 @@ The panel doesn't say whether an arm was full or part: `LSTATUS` can tell, but n
 - HomeKit gives up on a set request after about **9 s**, so answer `onSet` quickly and apply the outcome when the panel confirms.
 - iOS caches an alarm's `validValues` (the arm buttons) for an accessory it already knows; a change only shows on a new accessory.
 - The security system service has optional **StatusTampered** and **StatusFault** characteristics; the fork sets them from the panel's tampers and faults (including mains, from the power reading), so the Home app shows them on the alarm.
+
+### 3.5 More about Texecom Connect (October 2026)
+
+Found on the same panel (Premier Elite 24, V6.05.03, SmartCom) between 8 and 14 October 2026, while testing the Home Assistant port of the same code. Other panels are named where they differ.
+
+**The session**
+
+- **Wait 2 s after connecting before sending the login**: one sent sooner is ignored.
+- **Answers can be slow.** Send one command at a time, and resend it with the same sequence number after 3.5 s, up to 5 times; an area-flags read once took over 2.5 s. (The fork's client does both.)
+- **Busy NAKs can last.** After a burst of events (~50 s of them), an Elite 88 (V6.02.02, ComIP) answered every keep-alive retry with a NAK (another project, see section 7). It isn't a dead session: skip that read and try again at the next keep-alive rather than reconnecting.
+- **Close a dropped socket at once.** A client still holding its own dead socket can't log in again until it's closed, and a second connection is refused outright while one is live (another project).
+- **The alarm-time drop and the long refusal window are the SmartCom's.** A dedicated ComIP stayed connected through an alarm and accepted a new login 2 s after a session ended (another project). If a SmartCom also reports to a monitoring centre, a separate ComIP for the plugin avoids both.
+
+**Area flags: which to trust**
+
+`Get area flags` (command 11) returns one area bitmap per flag. On this panel:
+
+| Flag | Seen |
+|---|---|
+| 21 *Armed* | Clear during the exit delay, set from the moment the area arms. The dependable "armed" flag |
+| 23 *Part Armed* | Set about 15 s after the area has armed |
+| 19 *Exit*, 24 *Part Arming* | Can still be set once armed: 19 just after a remote arm, and 24 **for the whole time Part Arm 2 or 3 was armed** (neither has anything programmed on this panel; not seen with Part Arm 1). Count them as "in exit" only while 21 is clear, or a re-read after a reconnect shows "Arming…" until the disarm |
+| 22 *Full Armed*, 23, 60 *Armed/Alarm*, 63 *Full Armed/Exit* | Stay set for a few seconds after a disarm without 21 (22 and 63 were read 0.35 s after the disarm message; caught up within 4.5 s). Ignore a re-read that shows anything but disarmed for about 5 s after a disarm message |
+
+**Which mode an exit delay is arming to**
+
+The *in exit* area message and log 32 *Exit Started* are the same for Away and every part arm, so a keypad arm's "Arming…" can't take its target from them. The flags say: during a part arm's exit delay, 24 *Part Arming* is set with 19 *Exit* (within 1 s of *in exit*), together with 50, 51 or 52 for Part Arm 1, 2 or 3; during a full arm's, 63 *Full Armed/Exit* is set instead, about 1.5 to 2 s in. Re-read the flags when an exit delay starts, and a few more times until they say (keypad Part Arm 1, Part Arm 2 and Away, 14 October 2026). A V5.02.01 panel's messages didn't say either; whether its flags do is untested.
+
+**Alarms and the entry route**
+
+- **After an alarm the panel can go back to *in entry*** when the entry zone is seen again: *in alarm*, then *in entry* 1.6 s later, then *in alarm* again 16 s after that, with the sirens sounding throughout until the disarm. Keep showing Triggered until the disarm, whatever entry or exit messages arrive in between.
+- **A detector that sees the entry route can raise a real alarm.** Walking in, an interior detector saw the person 0.6 s before the entry zone did: the area went *in alarm* (keypad sounder only; the alarm was reported), then *in entry* 0.6 s later. That's the panel's decision, not a false alarm in the plugin.
+- **A zone's *alarmed* bit (0x10) stays set until the area is reset** (alarm memory). When naming the zone that set off an alarm, ignore zones in areas that aren't armed: their bit may be left over from earlier.
+
+**Part arms**
+
+- **A part arm with nothing programmed arms every zone**, from the keypad and over Connect (command 6): seen with Part Arms 2 and 3 on 14 October 2026; not tried over Crestron. So a HomeKit button mapped to an unprogrammed part arm can arm the whole house. (Once, choosing a part arm at the keypad showed *Call Engineer* and didn't arm; later tries armed normally. Cause unknown.)
+- **Zones a part arm leaves out report *auto bypass*** (zone state bit 6, 0x40) from the start of its exit delay until the disarm.
+
+**Tampers the panel doesn't log**
+
+The panel doesn't always log a tamper. On 8 October 2026 a detector's cover (on the shared auxiliary tamper circuit) was opened three times while disarmed. The first two openings logged 62 *Auxiliary Tamper* group 11 as usual. The third sent **no group 11 at all**, although the keypad showed `AUX 0,0 Tamper` and the internal sounder went off; only the group 12 came, when the cover closed. A limit on repeated alarms (a "swinger" count) is a guess, not confirmed.
+
+That time, area flag **44 *Internal Alarm*** (with 62 *Speaker Mimic*) was set about 1 s after the cover opened. Both cleared once a user code was entered, not when the cover closed. Flag 14 *Tamper Alarm* stayed clear. A rule that works: while an area is disarmed, treat flag 44 set for 5 s with nothing reported to explain it (a tamper, a zone alarm, a failed arm, or the area in exit, entry or alarm) as an unreported tamper, until it clears. Flag 44 is also set during the "fail to set" warning (with 27 *Arm Failed*, 30 *Strobe* and 62), and on V4 firmware while an alarm sounds (another project), so ignore it in those states.
+
+**Power readings**
+
+- **Readings** (command 25): volts = 13.7 + (reading − reference) × 0.07; current = reading × 9 mA.
+- **A single reading can be wrong.** With mains on, one read gave 0 mA at 13.14 V and the next, 30 s later, 333 mA at 13.63 V (twice in one morning, 12 October 2026). Testers on a ComWiFi and a ComIP saw a false "mains off" after comms drops. Call it "on battery" only after two such readings in a row (about a minute), and ignore readings below 9 V. The panel's own *AC Fail* log entry still arrives at once.
+
+**Zones changed by the installer**
+
+Re-read zones and areas when any of these arrive, because each can mean zones were added, renamed or moved:
+
+| Log | Means |
+|---|---|
+| 59 *Installer Programming End* | Engineer programming ended at a keypad |
+| 54 *Download End* | A Wintex session ended. **Never logged** for Wintex sessions through a serial adapter on the Crestron port (12 October 2026, and in older entries in the event log) |
+| 100 *Site Data Changed* | One per write from Wintex (parameter 1), each with 113 *Remote Command* (group 9, parameter = the Com Port). The dependable signal: re-read once the writes have stopped for about 5 s |
+
+A **full send** from Wintex logged no 100 at all (only 53 *Download Start* when it connected), so nothing signals it: offer a manual re-read. **Reading zone details while Wintex was connected ended the Connect session**, and the SmartCom then turned logins away (80-byte replies) until Wintex disconnected, although the usual status reads carried on during other Wintex sessions. So retry a failed re-read after the next login, and never drop a known zone because its details couldn't be read.
+
+**Panel clock**
+
+- **Connect reads and sets seconds** (commands 23 and 24: day, month, 2-digit year, hours, minutes, seconds). The Crestron `\T` command carries whole minutes only.
+- **The clock can hold an impossible date** (day 0, month 0): treat it as "not set" and correct it.
+- **It drifts.** On a panel not set up for the Texecom Cloud, the clock was 7 s ahead on 12 October 2026 and 43 s behind on 14 October.
+- **A SmartCom corrects the clock only through the Texecom Cloud.** Texecom's SmartCom installation guide (INS760EN-8) says the cloud service uses an NTP server, and that setting a panel up for Texecom Connect programs reporting numbers whose ports, among other things, correct the clock for the country of installation. Panels not set up for the cloud get no correction. Writing only when the clock is more than a minute out leaves a cloud-corrected clock alone. Whether the cloud's correction still happens while another client holds the SmartCom's session is untested.
+- **Summer time is untested**: does the panel change its own clock, and does a clock sync then fight it? UK clocks change on 25 October 2026 and 28 March 2027.
+
+**Keypad user names**
+
+`Get user` (command 27, the user number as one byte) returns a user's name **and their code** and settings: 23 bytes on a Premier Elite 24 (V6.05). The name is the first 8 bytes; the code follows as BCD (all `FF` for a user without one). It answers NAK past the last user (25 on a 24-user panel) and for user 0: the engineer, whom keypad events report as user 0, has no user record. Reading all 25 takes about 9 s. If you use it to put names in the log, decode the name only, and never keep, log or show the rest of the reply (including in debug output, and a reply that fails its CRC check).
+
+**Log events, checked against the panel's own event log**
+
+The live log messages from 8 and 12 October 2026 were matched, to the second, against the panel's event log read in Wintex (460 entries), and every one had the same meaning. Details worth knowing:
+
+| Type, group | Wintex shows | Parameter |
+|---|---|---|
+| 31, 0 | *System Access by User nn* | The user (0 = the engineer) |
+| 32, 16 / 32, 17 | *Exit Started* / *Exit Stopped* | Where: 0 a remote arm, 11 the keypad *Net 1 – Rkp 1* |
+| 34, 18 | *Entry started by Zone nnn* | The zone |
+| 37, 5 | *Area(s) DISARMED* (at a keypad) | The user |
+| 42, 6 / 42, 5 | *Area(s) Remote ARMED* / *Remote DISARMED* | 0 |
+| 53, 9 | *Download Start* (Wintex connecting) | The Com Port it came in through |
+| 74, 13 / 15 / 14 | *User Walk Test* started / zone seen (first time only) / ended. Area flag 33 *Walk Test* is set throughout, so a plugin can tell walk-test movement from real use | 0, or the zone |
+| 85, 0 | *Zone nnn Arm Failed* | The zone |
+
+- **The group byte:** the low 6 bits are the group; bit 6 means *communication delayed*, bit 7 *communicated*. Groups 1, 3, 9, 11 and 20 start a condition; 2, 4, 10 and 12 are the matching restores.
+- **The event log can miss what was sent live** (one alarm's entries arrived over Connect but aren't in the event log), so don't treat it as complete.
+- **Log timestamps are the panel's clock** (7 s ahead that day), not when the message arrived.
+
+**Zone types**
+
+The type number in `Get zone details` (command 3), and in a zone's alarm log entry, is the position in Wintex's *Zone Type* list (confirmed on V6.05.03): 0 Not used, 1 Entry/Exit 1, 2 Entry/Exit 2, 3 Guard, 4 Guard Access, 5 24hr Audible, 6 24hr Silent, 7 PA Audible, 8 PA Silent, 9 Fire, 10 Medical, 11 24hr Gas, 12 Auxiliary, 13 Tamper, 14 Exit Terminator, 15 Moment Key, 16 Latch Key, 17 Security, 18 Omit Key, 19 Custom, 20 Conf PA Audible, 21 Conf PA Silent. The type says nothing about the detector (a door contact and a motion detector can both be *Guard*), so the zone's name is the only clue to contact versus motion.
+
+### 3.6 Firmware and module differences
+
+From diagnostics shared by testers, and from other projects (credited in section 7). Worth knowing before relying on any one panel's behaviour:
+
+| Panel / module | Differs |
+|---|---|
+| Elite 24, **V5.02.01** | No area states 6–8: a keypad Part Arm 2 sent *part armed* (4) with log 79 *Part Arm 2* and nothing after it; a keypad full arm sent *armed* (3) with log 43 *Quick Arm* (group 6). When the entry/exit zone opened during the exit delay, it sent log **127** (group 5 *Open*, then 6 *Close* when it closed) and a **two-byte** output message `03 e0` (output messages are normally three bytes). Neither is in Texecom's published lists: a parser must skip short or unknown messages, not fail on them |
+| Elite 24, V6.06.03, **ComWiFi** | The ComWiFi listens on port **10002** (a SmartCom or ComIP: 10001) |
+| Elite 48, **V4.02.01** (another project) | Answers a bulk area-flag read with one byte, so flags are read one at a time. Flag 0 *Alarm* was clear while the alarm sounded and set after the disarm, like an alarm memory (5, 28, 30, 44, 61 and 62 were set while it sounded), so a flag re-read after a keypad disarm would show Triggered again. Not yet checked on V6 |
+| Elite 88, V6.02.02, ComIP (another project) | After disarming Part Arm 2, the *disarmed* area message didn't always arrive; a periodic re-read corrects it |
+| System flags (command 10), last byte | `01` on V6.05.03; `03` on V6.06.03 and V5.02.01; `00` on an Elite 64, V5.00.03. Meaning unknown |
 
 ---
 
@@ -287,7 +397,7 @@ Part Arm 1/2/3 map to Home app modes with `part_arm_1`…`part_arm_3` (default N
 
 ### 4.4 Settings page and README
 
-The settings page has four numbered sections, with plain-English help and a recommendation on every field. Fields that don't apply to the chosen protocol are hidden, and the problems in 2.11 are fixed. The [README](../README.md) is a step-by-step guide for SmartCom owners, with screenshots.
+The settings page has four numbered sections, with plain-English help and a recommendation on every field. Fields that don't apply to the chosen protocol are hidden, and the problems in 2.11 are fixed. The [README](https://github.com/metaljay/homebridge-texecom/blob/master/README.md) is a step-by-step guide for SmartCom owners, with screenshots.
 
 ### 4.5 Code layout and tests
 
@@ -327,13 +437,26 @@ tools/                 fake panels, session replay, probes used on the real pane
 | Crestron, binary part arm and disarm with a probe tool | Both carried out |
 | Crestron, binary logout | Blackout ~60 s → ~30 s; HomeKit blind ~68 s → ~39 s per command |
 | Connect, read-only (login, discovery, states, live events) | Correct |
-| Connect, HomeKit Night then Off | Night in ~9 s (the panel's 8 s remote-arm settle), Off in under 1 s, no blackout |
+| Connect, HomeKit Night then Off | Night in ~9 s (a remote arm's exit time: with option 58 *Remote Arm Instant* on, remote arms set after about 10 s and keypad arms after 15 s with the same programmed exit delay, so the option shortens the exit time rather than skipping it), Off in under 1 s, no blackout |
 | Keypad arm, entry delay and keypad disarm | Seen correctly |
 | Homebridge 1.11 and 2.4 | Both |
 | Keypad emulation, UDL memory reads | Don't work on V6.05.03 (see 3.2) |
 | Connect (through a Home Assistant port of the same code, same panel): Away, Night, Part Arm 2, mode switches, keypad arms, failed arms, three alarms, panel lid and detector tampers, two mains failures, a full power-down | All as described in 3.3; the Home app via HomeKit Bridge showed Away / Night / Off and followed keypad arms |
 
 Not yet exercised on the real panel with this plugin itself: the Tampered/Fault characteristics and the mode-switch fix (covered by tests against the fake panel).
+
+### How to test against a real panel
+
+What worked, for anyone repeating these tests:
+
+- **One client at a time.** Turn off every other Connect client (the Texecom app, another Homebridge, texecom2mqtt, Home Assistant) before connecting a test instance, and turn it back on afterwards.
+- **Sort each test by risk:** read-only (any time); changes the panel but doesn't arm or sound it, e.g. setting the clock (ask the panel's owner first); arms, sounds, cuts power or opens a tamper (only with the panel's owner present and agreeing, and they disarm at the keypad).
+- **Alarm tests are loud and may be reported.** Agree a time, warn the household and neighbours, and if the alarm is monitored, tell the monitoring centre or put it in test mode first.
+- **Don't cut all power** (mains and battery) unless you mean to: it resets the panel clock.
+- **Never record a code.** Keep logs and fixtures free of the UDL and keypad codes; if a reply contains codes (`Get user`), note only its format.
+- **Use Wintex for reading only, and note the time of every step to the second.** Matching the live messages against the panel's own event log in Wintex afterwards is the quickest way to confirm what a message means.
+- **Make the simulated panel misbehave like the real one.** Besides the normal replies, it should be able to hang up about 1.5 s after the disarm that follows an alarm, then turn logins away for ~2 minutes (80-byte frames it doesn't recognise, and a frame with a bad CRC); NAK the next *n* reads; open a tamper without logging it; report *AC Fail* with no restore; and start with its clock at 31 Oct 2023. Most of the problems in section 8 show up there first.
+- **Turn users' captures into regression tests.** A capture a user shares (their zones, areas and the messages their panel sent) can become a simulated panel that replays them. Keeping each one as a test means a change can't quietly break a panel nobody here owns.
 
 ---
 
@@ -355,27 +478,31 @@ Not yet exercised on the real panel with this plugin itself: the Tampered/Fault 
 
 The same protocol work is also available as a Home Assistant integration: [metaljay/ha-texecom](https://github.com/metaljay/ha-texecom).
 
-Original plugin by Kieran Jones, maintained by Max Christian and Chris Posthumus. Protocol credits for the Connect code are in [lib/connect/NOTICE](../lib/connect/NOTICE).
+Original plugin by Kieran Jones, maintained by Max Christian and Chris Posthumus. Protocol credits for the Connect code are in [lib/connect/NOTICE](https://github.com/metaljay/homebridge-texecom/blob/master/lib/connect/NOTICE).
 
 ---
 
 ## 8. Later findings (October 2026)
 
-Found while testing the Home Assistant port of the same code on the same panel (Premier Elite 24, V6.05.03). They apply to the fork's Connect code as it stands (`master`). The fork isn't being developed further, so they're noted here rather than fixed.
+Found while testing the Home Assistant port of the same code on the same panel (Premier Elite 24, V6.05.03). They apply to the fork's Connect code as it stands (`master`). The fork is archived, so they're noted here rather than fixed.
 
 | # | Where | What happens | Fix |
 |---|---|---|---|
 | 1 | `lib/connectPanel.js:322` | Healthy power readings clear every name in `MAINS_FAULTS`, including **PSU AC Fail** (log 107: a *remote* power supply's mains). A real PSU mains failure disappears within 30 s, although the panel's own mains is fine and the PSU's isn't | Clear only *AC Fail* from the readings; leave *PSU AC Fail* to its own restore log |
-| 2 | `lib/connectPanel.js:317` | 0 mA below 13.3 V counts as "on battery". A panel whose current always reads 0, or one read just after a restart while on battery, gets the wrong answer | Trust 0 mA only once the panel has reported a non-zero current since connecting; otherwise require a clearly low voltage (below ~12.9 V) |
+| 2 | `lib/connectPanel.js:317` | 0 mA below 13.3 V counts as "on battery". A panel whose current always reads 0, or one read just after a restart while on battery, gets the wrong answer | Trust 0 mA only once the panel has reported a non-zero current since connecting; otherwise require a clearly low voltage (below ~12.9 V). Also require two "on battery" readings in a row, and ignore readings below 9 V: a single reading can be wrong (3.5) |
 | 3 | `lib/areaAccessory.js:124,130` | Crestron `"A0010` / `"D0010` (e.g. the held-back event after a UDL arm) is logged as "by user 0" | User 0 means nobody: don't credit it to anyone |
 | 4 | `lib/connection.js:131` | While the Crestron bridge is down, every reconnect attempt logs an error | One warning after a few failures, then quiet until it's back |
-| 5 | Connect | Tampers and faults that started before Homebridge connected aren't known (they only come from log events), so after a restart *Tampered* / *Fault* stay clear until the next change. Mains is the exception (the power reading) | Being investigated: the area flags (see below) or the system flags (command 10) may show them |
+| 5 | Connect | Tampers and faults that started before Homebridge connected aren't known (they only come from log events), so after a restart *Tampered* / *Fault* stay clear until the next change. Mains is the exception (the power reading) | No read-only way found yet. Flag 14 *Tamper Alarm* stayed clear with a cover open; flag 44 *Internal Alarm* shows an open cover only while the internal sounders run (3.5); system flags byte 0 read `10` then and `40` once after an alarm, and byte 2 `08` with mains off, but they aren't understood. Reading the last few event-log entries on connecting is the other candidate (untested). |
 | 6 | Design | The keep-alive work (state, power, keypad text) runs when no command has been sent for 30 s. That's fine as the fork stands, but anything that sends commands as zones change (e.g. re-reading "Ready" whenever a detector clears) starves it while people move about, and the mains restore goes unseen | Run that work on its own timer, not only when idle |
+| 7 | `lib/connect/protocol.js:206` (`decodeAreaFlags`) | 19 *Exit* and 24 *Part Arming* are checked before *Armed*, and 22/23 count as armed without 21. The real panel kept 24 set for the whole time an unprogrammed Part Arm 2 or 3 was armed, and 22/23 for a few seconds after a disarm (3.5), so a re-read can show "Arming…" while armed (after a reconnect), or armed just after a disarm | Check 21 first, and count 19/24 as exit only while 21 is clear; ignore non-disarmed flag reads for ~5 s after a disarm message |
+| 8 | `lib/areaAccessory.js:190` (`in exit`) | A keypad arm's "Arming…" target is always the default mode | Take it from the flags: 24 with 50–52 for a part arm, 63 for a full arm (3.5) |
+| 9 | `lib/connectPanel.js:282` | Tampers come only from log events, and the panel doesn't always log one | Fall back on area flag 44 *Internal Alarm* while disarmed (3.5) |
+| 10 | `lib/connectPanel.js:294` | Zones and areas are re-read only after 59 *Installer Programming End* | Also after 100 *Site Data Changed* (once quiet for ~5 s) and 54; retry after the next login if the re-read fails; keep known zones whose details couldn't be read (3.5) |
 
 **More about the panel (V6.05.03):**
 
 - **Area flags while disarmed and quiet:** 16 *Ready*, 25 *Force Armable*, 29 *Bell SCB*, 32 *Detector Reset*, 67 *LED control*. 16 and 25 clear together while any detector is active, and come back once it clears (a bulk read about 2 s later shows it). **System flags** (command 10, 8 bytes) read `00 20 09 00 00 00 00 01` in the same state.
-- **The SmartCom's refusal window**, measured: after a client restarts, a new login got in after 4–20 s. Straight after a short session closed (a setup check), the first login was closed by the panel and the next, 5 s later, was accepted.
+- **The SmartCom's refusal window**, measured: after a client restarts, a new login got in after 4–20 s. Straight after a short session closed (a setup check), the first login was closed by the panel and the next, 5 s later, was accepted. Later tests saw up to about 70 s.
 - **Finding the SmartCom:** it registers on the network as **`texe_hub`** (its MAC prefix is Microchip's), which helps users spot it in their router's device list.
 - **A Connect login doesn't add anything to the panel's event log** (no *Download Start/End*).
 
