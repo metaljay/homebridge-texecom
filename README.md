@@ -87,7 +87,7 @@ Besides a full arm (**Away**), your panel can have up to three **part arms**, ea
 
 **Before you choose your buttons, find out what each of yours covers.** Ask your installer, or look at the part-arm settings in Wintex. Then:
 
-- tick only the buttons for part arms you actually have (an unused one would arm nothing useful, or the wrong zones);
+- tick only the buttons for part arms you actually have (on a tested panel, a part arm with nothing programmed armed every zone, like Away);
 - set **Part Arm 1 / 2 / 3 is** so each Home app button sets the part arm you expect.
 
 The Home app's buttons are always called Away, Night and Home; you choose which part arm sits behind Night and Home.
@@ -114,10 +114,10 @@ That's it. 🎉
 
 ## 💡 Good to know
 
-- 🔧 **Tamper and faults** (Texecom Connect): the alarm shows *Tampered* while the panel lid or a detector is open, and *Fault* during a mains failure or other panel fault.
-- 🚨 **When the alarm goes off**, the panel briefly drops the connection to send its own alarm notification. The plugin reconnects and catches up within seconds.
+- 🔧 **Tamper and faults** (Texecom Connect): the alarm shows *Tampered* while the panel lid or a detector is open, and *Fault* during a mains failure or other panel fault. The panel doesn't always report a detector's cover opening, so don't rely on *Tampered* alone.
+- 🚨 **After the alarm goes off**, the SmartCom drops the connection to send its own report (seen just after the disarm), and lets the plugin back in about 2 minutes later. The plugin reconnects and catches up by itself.
 - 🧩 **Changing the arm buttons later** makes the alarm reappear in the Home app as a new accessory (the Home app remembers an alarm's buttons). Set its room and notifications again.
-- 🔌 **Wintex** can still connect through the SmartCom while Homebridge is connected.
+- 🔌 **Wintex** can still connect through the SmartCom while Homebridge is connected. If the plugin re-reads zones while Wintex is connected, it can be locked out until Wintex has finished.
 - 🧱 It's best to run this plugin as a [child bridge](https://github.com/homebridge/homebridge/wiki/Child-Bridges), so a problem with the alarm connection can't affect your other accessories.
 
 <details>
