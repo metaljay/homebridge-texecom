@@ -2,6 +2,8 @@
 
 > 🏡 **Using Home Assistant?** The same protocol work is available as a Home Assistant integration (installable through HACS, no Homebridge needed): [metaljay/ha-texecom](https://github.com/metaljay/ha-texecom).
 
+<a href="https://buymeacoffee.com/metaljay"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
+
 # Homebridge Texecom
 
 Control your Texecom **Premier Elite** alarm from the Apple **Home** app, using the **SmartCom** you already have.
@@ -229,6 +231,12 @@ npm test
 ```
 
 The tests run against fake panels, so no panel is needed. `tools/` has the probes and test scripts used on the real panel.
+
+## ☕ Support
+
+If this is useful to you, you can [buy me a coffee](https://buymeacoffee.com/metaljay). Thank you!
+
+<a href="https://buymeacoffee.com/metaljay"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me a Coffee" height="40"></a>
 
 ## 🙏 Credits
 
